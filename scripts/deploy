@@ -1,0 +1,8 @@
+#!/bin/bash
+
+scp target/release/daoeducation root@$1:/var/www/dao.education/daoeducation_new &&
+  ssh root@$1 'chown www-data.www-data /var/www/dao.education/daoeducation_new &&
+  systemctl stop daoe_api &&
+  mv /var/www/dao.education/daoeducation /var/www/dao.education/daoeducation_old &&
+  mv /var/www/dao.education/daoeducation_new /var/www/dao.education/daoeducation &&
+  systemctl start daoe_api'
