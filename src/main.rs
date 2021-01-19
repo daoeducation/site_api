@@ -23,7 +23,10 @@ use tera::Tera;
 lazy_static! {
     pub static ref TEMPLATES: Tera = {
         let mut tera = Tera::default();
-        tera.add_raw_template("test", include_str!("templates/checkout_sessions/show.html.tera")).expect("No static");
+        tera.add_raw_template(
+          "checkout_sessions/show",
+          include_str!("templates/checkout_sessions/show.html.tera")
+        ).expect("No static");
         tera
     };
 }

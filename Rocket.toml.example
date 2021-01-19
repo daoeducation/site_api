@@ -1,14 +1,8 @@
 [global]
 secret_key="BEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEF"
 stripe_secret_key="sk_test_example"
-recaptcha_private_key="recaptcha_private_key"
-
-# For CORS whitelisting between the site and this api server.
+stripe_public_key = "pk_test_example"
 checkout_domain="http://example.com"
-
-[global.public_config]
-stripe_key = "pk_test_example"
-recaptcha_key = "recaptcha_site_key"
 
 [global.programs]
 zero_to_hero = "price_one"

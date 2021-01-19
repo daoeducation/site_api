@@ -5,17 +5,10 @@ use stripe::{Client, Price};
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct Site {
   pub secret_key: String,
-  pub stripe_secret_key: String,
-  pub recaptcha_private_key: String,
   pub checkout_domain: String,
-  pub public_config: PublicConfig,
+  pub stripe_secret_key: String,
+  pub stripe_public_key: String,
   pub programs: Programs,
-}
-
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub struct PublicConfig {
-  pub stripe_key: String,
-  pub recaptcha_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,12 +50,8 @@ mod test {
         [global]
         secret_key="BEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEF"
         stripe_secret_key="sk_test_example"
-        recaptcha_private_key="recaptcha_private_key"
+        stripe_public_key = "pk_test_example"
         checkout_domain="http://example.com"
-
-        [global.public_config]
-        stripe_key = "pk_test_example"
-        recaptcha_key = "recaptcha_site_key"
 
         [global.programs]
         zero_to_hero = "price_one"
@@ -80,12 +69,8 @@ mod test {
       Site {
         secret_key: "BEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEF".into(),
         stripe_secret_key: "sk_test_example".into(),
-        recaptcha_private_key: "recaptcha_private_key".into(),
+        stripe_public_key: "pk_test_example".into(),
         checkout_domain: "http://example.com".into(),
-        public_config: PublicConfig {
-          stripe_key: "pk_test_example".into(),
-          recaptcha_key: "recaptcha_site_key".into()
-        },
         programs: Programs {
           zero_to_hero: PriceId::from_str("price_one").unwrap(),
           coding_bootcamp: PriceId::from_str("price_two").unwrap()

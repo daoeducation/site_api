@@ -27,7 +27,7 @@ impl CheckoutSession {
 
     Some(CheckoutSession {
       program,
-      stripe_key: site.public_config.stripe_key.clone(),
+      stripe_key: site.stripe_public_key.clone(),
       id: Some(stripe_session.id)
     })
   }
