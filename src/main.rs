@@ -1,14 +1,12 @@
 #[macro_use]
 extern crate rocket;
 
+use rocket_contrib::templates::Template;
+
 extern crate serde_derive;
 extern crate stripe;
 
-use rocket::{
-  fairing::{AdHoc, Fairing, Info, Kind},
-  http::Header,
-  Request, Response,
-};
+use rocket::fairing::AdHoc;
 
 mod controllers;
 use controllers::*;
@@ -17,49 +15,17 @@ mod models;
 
 use models::Site;
 
-#[options("/")]
-pub async fn options() -> &'static str {
-  ""
-}
-
-#[derive(Default)]
-struct Cors();
-
-#[rocket::async_trait]
-impl Fairing for Cors {
-  fn info(&self) -> Info {
-    Info {
-      name: "Cors",
-      kind: Kind::Response,
-    }
-  }
-
-  async fn on_response<'r>(&self, req: &'r Request<'_>, res: &mut Response<'r>) {
-    let site = req.managed_state::<Site>().expect("Site to be there");
-    res.set_header(Header::new(
-      "Access-Control-Allow-Origin",
-      &site.checkout_domain,
-    ));
-    res.set_header(Header::new(
-      "Access-Control-Allow-Methods",
-      "POST, GET, PATCH, OPTIONS",
-    ));
-    res.set_header(Header::new("Access-Control-Allow-Headers", "*"));
-    res.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
-  }
-}
-
 #[launch]
 fn rocket() -> rocket::Rocket {
   rocket::ignite()
     .mount(
-      "/stripe/config",
-      routes![configs_controller::index, options],
-    )
-    .mount(
       "/stripe/checkout_sessions",
-      routes![checkout_sessions_controller::create, options],
+      routes![
+        checkout_sessions_controller::zero_to_hero,
+        checkout_sessions_controller::coding_bootcamp
+      ],
     )
+    .attach(Template::fairing())
     .attach(AdHoc::on_attach("Site config", |rocket| async {
       let site = rocket
         .figment()
@@ -71,7 +37,6 @@ fn rocket() -> rocket::Rocket {
 
       Ok(rocket.manage(site))
     }))
-    .attach(Cors())
 }
 
 #[cfg(test)]
@@ -81,15 +46,85 @@ use galvanic_test::test_suite;
 test_suite! {
     name controller_specs;
 
-    use super::models::{CheckoutSession, Config, Program};
-    use rocket::local::blocking::{Client, LocalResponse};
+    use super::models::*;
+    use rocket::local::blocking::Client;
 
     use rocket::http::Status;
-    use serde_json::from_str;
-    use galvanic_assert::{*, matchers::*};
+    use galvanic_assert::*;
+
+    fixture mockstripe() -> (Vec<mockito::Mock>, guerrilla::PatchGuard) {
+      setup(&mut self) {
+        let mocks = vec![
+          mockito::mock("GET", mockito::Matcher::Regex(".*price.*".to_string()))
+            .with_body(r#"{
+              "id": "price_1I7gnkDVE5TJAnJjPTABtPG3",
+              "object": "price",
+              "active": true,
+              "billing_scheme": "per_unit",
+              "created": 1610196256,
+              "currency": "eur",
+              "livemode": false,
+              "lookup_key": null,
+              "metadata": {},
+              "nickname": null,
+              "product": "prod_IiRoYzs4pMzzH7",
+              "recurring": {
+                "aggregate_usage": null,
+                "interval": "month",
+                "interval_count": 1,
+                "usage_type": "licensed"
+              },
+              "tiers_mode": null,
+              "transform_quantity": null,
+              "type": "recurring",
+              "unit_amount": 2000,
+              "unit_amount_decimal": "2000"
+            }"#)
+            .create(),
+          mockito::mock("POST", mockito::Matcher::Regex(".*checkout.*".to_string()))
+            .with_body(r#"{
+              "id": "cs_test_UlBpFuXAZzjRFuFKFDP5io1eC0ml0GlJUscRJCTcDPlOJzR01B5PyIRm",
+              "object": "checkout.session",
+              "allow_promotion_codes": null,
+              "amount_subtotal": null,
+              "amount_total": null,
+              "billing_address_collection": null,
+              "cancel_url": "https://example.com/cancel",
+              "client_reference_id": null,
+              "currency": null,
+              "customer": null,
+              "customer_email": null,
+              "livemode": false,
+              "locale": null,
+              "metadata": {},
+              "mode": "payment",
+              "payment_intent": "pi_1I18y5DVE5TJAnJjdzl22po3",
+              "payment_method_types": [
+                "card"
+              ],
+              "payment_status": "unpaid",
+              "setup_intent": null,
+              "shipping": null,
+              "shipping_address_collection": null,
+              "submit_type": null,
+              "subscription": null,
+              "success_url": "https://example.com/success",
+              "total_details": null
+            }"#)
+            .create(),
+        ];
+
+        let guard = guerrilla::patch1(Site::stripe, |_|{
+          stripe::Client::from_url(mockito::server_url(), "sk_test_123")
+        });
+
+        (mocks, guard)
+      }
+    }
 
     fixture client() -> Client {
         setup(&mut self) {
+          std::env::set_var("ROCKET_CONFIG", "Rocket.toml.example");
           let rkt = tokio::runtime::Runtime::new()
             .expect("Failed to create Tokio runtime")
             .block_on(async { super::rocket() });
@@ -110,54 +145,17 @@ test_suite! {
       })
     }
 
-    fn j<D: serde::de::DeserializeOwned>(response: LocalResponse) -> D {
-      from_str(&response.into_string().expect("String body")).expect("JSON response body")
-    }
-
-    test configs_show(client) {
-      let response = client.val.get("/stripe/config").dispatch();
+    test starts_checkout_for_zero_to_hero(mockstripe, client) {
+      let response = client.val.get("/stripe/checkout_sessions/zero_to_hero").dispatch();
 
       assert_eq!(response.status(), Status::Ok);
-      assert_that!(&j(response), has_structure![Config{
-        stripe_key: rematch("pk_test_51I18k3DVE5TJ.*"),
-        recaptcha_key: rematch("6LcxPiAaAAAA.*")
-      }]);
+      assert_that!(&response.into_string().expect("String body"), rematch("PlOJzR01B5PyIRm"))
     }
 
-    test starts_checkout_for_zero_to_hero(client) {
-      let _guard = guerrilla::patch2(CheckoutSession::verify_recaptcha, |_,_| Some(()) );
-
-      let response = client.val.post("/stripe/checkout_sessions")
-        .body(r#"{"program": "ZeroToHero", "recaptcha_token": "test_token"}"#)
-        .dispatch();
+    test starts_checkout_for_coding_bootcamp(mockstripe, client) {
+      let response = client.val.get("/stripe/checkout_sessions/coding_bootcamp").dispatch();
 
       assert_eq!(response.status(), Status::Ok);
-
-      assert_that!(&j(response), has_structure![CheckoutSession{
-        program: eq(Program::ZeroToHero),
-        recaptcha_token: rematch("test_token")
-      }]);
-    }
-
-    test starts_checkout_for_coding_bootcamp(client) {
-      let _guard = guerrilla::patch2(CheckoutSession::verify_recaptcha, |_,_| Some(()) );
-
-      let response = client.val.post("/stripe/checkout_sessions")
-        .body(r#"{"program": "CodingBootcamp", "recaptcha_token": "test_token"}"#)
-        .dispatch();
-
-      assert_eq!(response.status(), Status::Ok);
-      assert_that!(&j(response), has_structure![CheckoutSession{
-        program: is_variant!(Program::CodingBootcamp),
-        recaptcha_token: rematch("test_token")
-      }]);
-    }
-
-    test cannot_start_session_with_invalid_captcha(client) {
-      let response = client.val.post("/stripe/checkout_sessions")
-        .body(r#"{"program": "CodingBootcamp", "recaptcha_token": "test_token"}"#)
-        .dispatch();
-
-      assert_eq!(response.status(), Status::NotFound);
+      assert_that!(&response.into_string().expect("String body"), rematch("PlOJzR01B5PyIRm"))
     }
 }

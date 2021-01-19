@@ -8,18 +8,18 @@ pub struct Site {
   pub stripe_secret_key: String,
   pub recaptcha_private_key: String,
   pub checkout_domain: String,
-  pub config: Config,
+  pub public_config: PublicConfig,
   pub programs: Programs,
 }
 
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
-pub struct Config {
+pub struct PublicConfig {
   pub stripe_key: String,
   pub recaptcha_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SiteConfigError {
+pub enum SiteError {
   InvalidPrice(Program),
   NoSiteInState,
 }
@@ -29,12 +29,12 @@ impl Site {
     Client::new(&self.stripe_secret_key)
   }
 
-  pub async fn validate(self) -> Result<Self, SiteConfigError> {
+  pub async fn validate(self) -> Result<Self, SiteError> {
     let client = self.stripe();
     for program in [Program::ZeroToHero, Program::CodingBootcamp].iter() {
       Price::retrieve(&client, &self.programs.price(&program), &[])
         .await
-        .map_err(move |_| SiteConfigError::InvalidPrice(*program))?;
+        .map_err(move |_| SiteError::InvalidPrice(*program))?;
     }
     Ok(self)
   }
@@ -60,7 +60,7 @@ mod test {
         recaptcha_private_key="recaptcha_private_key"
         checkout_domain="http://example.com"
 
-        [global.config]
+        [global.public_config]
         stripe_key = "pk_test_example"
         recaptcha_key = "recaptcha_site_key"
 
@@ -82,7 +82,7 @@ mod test {
         stripe_secret_key: "sk_test_example".into(),
         recaptcha_private_key: "recaptcha_private_key".into(),
         checkout_domain: "http://example.com".into(),
-        config: Config {
+        public_config: PublicConfig {
           stripe_key: "pk_test_example".into(),
           recaptcha_key: "recaptcha_site_key".into()
         },
