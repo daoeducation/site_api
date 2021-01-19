@@ -1,7 +1,10 @@
 #[macro_use]
 extern crate rocket;
 
-use rocket_contrib::templates::Template;
+#[macro_use]
+extern crate lazy_static;
+
+extern crate tera;
 
 extern crate serde_derive;
 extern crate stripe;
@@ -15,6 +18,16 @@ mod models;
 
 use models::Site;
 
+use tera::Tera;
+
+lazy_static! {
+    pub static ref TEMPLATES: Tera = {
+        let mut tera = Tera::default();
+        tera.add_raw_template("test", include_str!("templates/checkout_sessions/show.html.tera")).expect("No static");
+        tera
+    };
+}
+
 #[launch]
 fn rocket() -> rocket::Rocket {
   rocket::ignite()
@@ -25,7 +38,6 @@ fn rocket() -> rocket::Rocket {
         checkout_sessions_controller::coding_bootcamp
       ],
     )
-    .attach(Template::fairing())
     .attach(AdHoc::on_attach("Site config", |rocket| async {
       let site = rocket
         .figment()
