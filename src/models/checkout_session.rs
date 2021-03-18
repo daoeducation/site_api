@@ -16,6 +16,7 @@ impl CheckoutSession {
       "success_url": format!("{}/payments/success?session_id={{CHECKOUT_SESSION_ID}}", site.checkout_domain),
       "cancel_url": format!("{}/payments/canceled", site.checkout_domain),
       "payment_method_types": ["card"],
+      "allow_promotion_codes": true,
       "mode": "payment",
       "line_items": [{
         "quantity": 1,
