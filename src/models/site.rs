@@ -24,7 +24,7 @@ impl Site {
 
   pub async fn validate(self) -> Result<Self, SiteError> {
     let client = self.stripe();
-    for program in [Program::ZeroToHero, Program::CodingBootcamp].iter() {
+    for program in &[Program::ZeroToHero, Program::Academy] {
       Price::retrieve(&client, &self.programs.price(&program), &[])
         .await
         .map_err(move |_| SiteError::InvalidPrice(*program))?;
@@ -55,7 +55,7 @@ mod test {
 
         [global.programs]
         zero_to_hero = "price_one"
-        coding_bootcamp = "price_two"
+        academy = "price_two"
     "#,
     );
 
@@ -73,7 +73,7 @@ mod test {
         checkout_domain: "http://example.com".into(),
         programs: Programs {
           zero_to_hero: PriceId::from_str("price_one").unwrap(),
-          coding_bootcamp: PriceId::from_str("price_two").unwrap()
+          academy: PriceId::from_str("price_two").unwrap()
         }
       }
     );

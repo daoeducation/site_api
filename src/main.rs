@@ -38,7 +38,7 @@ fn rocket() -> rocket::Rocket {
       "/stripe/checkout_sessions",
       routes![
         checkout_sessions_controller::zero_to_hero,
-        checkout_sessions_controller::coding_bootcamp
+        checkout_sessions_controller::academy
       ],
     )
     .attach(AdHoc::on_attach("Site config", |rocket| async {
@@ -167,8 +167,8 @@ test_suite! {
       assert_that!(&response.into_string().expect("String body"), rematch("PlOJzR01B5PyIRm"))
     }
 
-    test starts_checkout_for_coding_bootcamp(mockstripe, client) {
-      let response = client.val.get("/stripe/checkout_sessions/coding_bootcamp").dispatch();
+    test starts_checkout_for_academy(mockstripe, client) {
+      let response = client.val.get("/stripe/checkout_sessions/academy").dispatch();
 
       assert_eq!(response.status(), Status::Ok);
       assert_that!(&response.into_string().expect("String body"), rematch("PlOJzR01B5PyIRm"))

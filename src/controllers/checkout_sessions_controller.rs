@@ -12,9 +12,9 @@ pub async fn zero_to_hero(site: State<'_, Site>) -> Result<Content<String>, NotF
   do_checkout(&site, Program::ZeroToHero).await
 }
 
-#[get("/coding_bootcamp")]
-pub async fn coding_bootcamp(site: State<'_, Site>) -> Result<Content<String>, NotFound<()>> {
-  do_checkout(&site, Program::CodingBootcamp).await
+#[get("/academy")]
+pub async fn academy(site: State<'_, Site>) -> Result<Content<String>, NotFound<()>> {
+  do_checkout(&site, Program::Academy).await
 }
 
 async fn do_checkout(site: &Site, program: Program) -> Result<Content<String>, NotFound<()>> {

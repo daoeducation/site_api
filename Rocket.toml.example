@@ -6,4 +6,4 @@ checkout_domain="http://example.com"
 
 [global.programs]
 zero_to_hero = "price_one"
-coding_bootcamp = "price_two"
+academy = "price_two"
