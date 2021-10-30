@@ -7,22 +7,30 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rocket = { git = "https://github.com/SergioBenitez/Rocket" }
+rocket = { git = "https://github.com/SergioBenitez/Rocket", branch = "v0.5-rc", features = ["json"] }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
-tokio = "0.2"
+tokio = { version = "1.2.0", features = ["full"] }
 lazy_static = "1.4.0"
 tera = "1"
+validator = { version = "0.12", features = ["derive"] }
+thiserror = "1.0"
+sqlx = { version = "0.5.7", features = [ "postgres", "runtime-tokio-native-tls", "offline", "chrono", "json", "decimal" ] }
+chrono = { version = "0.4", features = ["serde"] }
+chronoutil = "0.2.3"
+chbs = "0.1.0"
+ureq = { version = "2.2.0", features = ["json"] }
+hmac = "0.11.0"
+sha2 = "0.9.8"
+hex = "0.4.3"
 
 [dependencies.stripe-rust]
-git = "https://github.com/wyyerd/stripe-rs" 
+path = "/home/nubis/stripe-rs"
 default-features = false
-features = ["full", "rustls-tls"]
+features = ["full", "rustls-tls", "webhook-events"]
 
-[dependencies.rocket_contrib]
-git = "https://github.com/SergioBenitez/Rocket"
-features = ["json"]
+#git = "https://github.com/wyyerd/stripe-rs" 
 
 [dev-dependencies]
 galvanic-test = "0.2"
@@ -30,3 +38,4 @@ galvanic-assert = "0.8.7"
 regex = "1"
 guerrilla = "0.1.4"
 mockito = "0.28"
+anyhow = "*"
