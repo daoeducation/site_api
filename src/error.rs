@@ -36,9 +36,12 @@ pub enum Error {
   #[error(transparent)]
   UreqError(#[from] ureq::Error),
 }
-/*  #[error("You tried to perform an action you're not authorized to perform")]
-  Unauthorized,
-*/
+
+impl From<rocket::form::Errors<'_>> for Error {
+  fn from(err: rocket::form::Errors<'_>) -> Error {
+    Error::validation("form", &format!("{}", err))
+  }
+}
 
 impl From<sqlx::Error> for Error {
   fn from(err: sqlx::Error) -> Error {

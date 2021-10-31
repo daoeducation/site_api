@@ -17,7 +17,7 @@ mod error;
 
 mod models;
 
-use models::Site;
+use models::{SiteSettings, Site};
 
 use tera::Tera;
 
@@ -46,7 +46,7 @@ pub fn server() -> rocket::Rocket<rocket::Build> {
     .attach(AdHoc::on_ignite("Site config", |rocket| async {
       let site = rocket
         .figment()
-        .extract::<Site>()
+        .extract::<SiteSettings>()
         .expect("Config could not be parsed")
         .into_site()
         .await
@@ -85,7 +85,7 @@ mod test {
     let profile_link = link[22..].to_string();
 
     let profile: serde_json::Value = client.get(&profile_link).await;
-    assert_eq!(1, profile.get("billing").unwrap().get("invoices").unwrap().as_array().unwrap().size());
+    assert_eq!(1, profile.get("billing").unwrap().get("invoices").unwrap().as_array().unwrap().len());
 
     let invoice: Invoice = client.post(&format!("/students/pay_now?token={}", token), "").await;
 

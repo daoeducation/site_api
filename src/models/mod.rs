@@ -105,23 +105,24 @@ pub struct Student {
   pub payment_method: PaymentMethod,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct StudentState<'a> {
   discord_verification_link: Option<String>,
   billing: BillingSummary<'a>,
 }
 
-impl StudentState<'_> {
-  pub fn new(site: &Site, student: Student) -> Self {
-    let discord_verification_link = student.discord_verification.map(|token|{
+impl<'a> StudentState<'a> {
+  pub async fn new(site: &'a Site, student: Student) -> Result<StudentState<'a>> {
+    let discord_verification_link = student.discord_verification.as_ref().map(|token|{
       format!( "https://discord.com/api/oauth2/authorize?response_type=token&client_id={}&state={}&scope=identify%20email%20guilds.join&redirect_uri={}/students/discord_success",
-      site.discord_client_id,
+      site.settings.discord.client_id,
       &token,
-      site.checkout_domain,
+      site.settings.checkout_domain,
     )});
-    let billing = BillingSummary::new(site, student);
 
-    Self{ discord_verification_link, billing }
+    let billing = BillingSummary::new(site, student).await?;
+
+    Ok(Self{ discord_verification_link, billing })
   }
 }
 
@@ -129,22 +130,23 @@ impl StudentState<'_> {
 pub struct StudentQuery {
   id: Option<i32>,
   stripe_customer_id: Option<String>,
+  discord_verification: Option<String>,
 }
 
 #[derive(FromForm)]
-struct DiscordToken {
-  state: String,
-  access_token: String,
+pub struct DiscordToken {
+  pub state: String,
+  pub access_token: String,
 }
 
 #[derive(Deserialize)]
-struct DiscordProfile {
-  id: String,
-  username: String,
-  discriminator: i32,
-  avatar: String,
-  verified: String,
-  email: String,
+pub struct DiscordProfile {
+  pub id: String,
+  pub username: String,
+  pub discriminator: i32,
+  pub avatar: String,
+  pub verified: String,
+  pub email: String,
 }
 
 // Hub has methods for find, all, create, update, delete.
@@ -186,7 +188,9 @@ impl Student {
         referral_code,
         current_subscription_id,
         wordpress_user,
+        wordpress_initial_password,
         discord_user_id,
+        discord_handle,
         discord_verification,
         stripe_customer_id,
         "payment_method" as "payment_method: PaymentMethod"
@@ -206,7 +210,7 @@ impl Student {
   }
 
   pub async fn find_optional(site: &Site, q: &StudentQuery) -> sqlx::Result<Option<Student>> {
-    Student::query(q).fetch_optional(site).await
+    Student::query(q).fetch_optional(&site.db).await
   }
 
   pub async fn find_by_id(site: &Site, id: i32) -> sqlx::Result<Student> {
@@ -294,11 +298,12 @@ impl Student {
   pub async fn setup_wordpress(&self, site: &Site) -> Result<()> {
     let password = gen_passphrase();
 
+    #[derive(Deserialize)]
     struct WordpressUser {
       id: i32,
     }
 
-    let user: WordpressUser = ureq::post(&format!("{}/wp/v2/users/", site.wordpress.api_url))
+    let user: WordpressUser = ureq::post(&format!("{}/wp/v2/users/", site.settings.wordpress.api_url))
       .send_json(serde_json::json!({
         "username": self.full_name,
         "password": password,
@@ -309,35 +314,39 @@ impl Student {
     sqlx::query("UPDATE students SET wordpress_user = $1, wordpress_initial_password = $2")
       .execute(&site.db).await?;
 
-    ureq::post(&format!("{}/ldlms/v2/users/{}/groups", site.wordpress.api_url, user.id))
-      .send_json(serde_json::json!({"group_id":[site.wordpress.student_group_id]}))?;
+    ureq::post(&format!("{}/ldlms/v2/users/{}/groups", site.settings.wordpress.api_url, user.id))
+      .send_json(serde_json::json!({"group_id":[site.settings.wordpress.student_group_id]}))?;
+
+    Ok(())
   }
 
-  pub async fn process_discord_response(site: &Site, discord_data: &str) -> Result<String> {
-    let discord: DiscordToken = rocket::form::Form::parse(discord_data)?;
-
-    let student = Student::find(&site, StudentQuery{ discord_verification: Some(discord.state), ..Default::default()}).await;
+  pub async fn process_discord_response(site: &Site, discord: DiscordToken) -> Result<String> {
+    let student = Student::find(&site, &StudentQuery{ discord_verification: Some(discord.state), ..Default::default()}).await?;
     let profile: DiscordProfile = ureq::get("https://discord.com/api/v9/users/@me")
-      .set("Authorization", format!("Bearer {}", discord.access_token))
+      .set("Authorization", &format!("Bearer {}", discord.access_token))
       .call()?
       .into_json()?;
 
-    let add_url = format!("https://discord.com/api/v9/guilds/{}/members/{}", site.discord.guild_id, profile.id);
+    let handle = format!("{}#{}", &profile.username, &profile.discriminator);
 
-    let _ignored_because_it_may_be_member = ureq::request("PUT", &add_url)
-      .set("Authorization", format!("Bot {}", site.discord.bot_secret_token))
+    let member_url = format!("https://discord.com/api/v9/guilds/{}/members/{}", site.settings.discord.guild_id, profile.id);
+
+    let _ignored_because_it_may_be_member = ureq::request("PUT", &member_url)
+      .set("Authorization", &format!("Bot {}", site.settings.discord.bot_secret_token))
       .send_json(serde_json::json![{"access_token": discord.access_token}])?;
 
-    let _ignored_because_it_may_have_role = ureq::request("PUT", &format!("{}/roles/{}", &add_url, site.discord.student_role_id))
-      .set("Authorization", format!("Bot {}", site.discord.bot_secret_token))
-      .send()?;
+    let _ignored_because_it_may_have_role = ureq::request("PUT", &format!("{}/roles/{}", &member_url, site.settings.discord.student_role_id))
+      .set("Authorization", &format!("Bot {}", site.settings.discord.bot_secret_token))
+      .send_json(serde_json::json![{}])?;
 
     sqlx::query!(
       "UPDATE students SET discord_handle = $2, discord_user_id = $3 WHERE id = $1",
       student.id,
-      format!("{}#{}", profile.username, profile.discriminator),
+      handle,
       profile.id
     ).execute(&site.db).await?;
+
+    Ok(handle)
   }
 }
 
@@ -367,9 +376,11 @@ impl Subscription {
       gen_passphrase()
     ).execute(&site.db).await?;
 
-    let student = Student::find_by_id(self.student_id);
+    let student = Student::find_by_id(site, self.student_id).await?;
 
-    student.setup_wordpress(site, site);
+    student.setup_wordpress(site).await?;
+
+    Ok(())
   }
 
   pub fn next_invoicing_date(&self) -> UtcDate {
@@ -407,7 +418,7 @@ impl<'r> FromRequest<'r> for Session {
 
   async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
     async fn build(req: &Request<'_>) -> Option<Session> {
-      let site = req.rocket().state::<Db>()?;
+      let site = req.rocket().state::<Site>()?;
       let token_str = req.query_value::<&str>("token").and_then(|r| r.ok())?;
       SessionToken::consume(site, &token_str).await.ok()
     }
@@ -524,7 +535,7 @@ impl Payment {
     payment_method: PaymentMethod,
     clearing_data: &str,
     invoice_id: Option<i32>,
-  ) -> sqlx::Result<Payment> {
+  ) -> Result<Payment> {
     let payment = sqlx::query_as!(Payment,
       r#"INSERT INTO payments (
         student_id,
@@ -558,7 +569,7 @@ impl Payment {
       ).execute(&site.db).await?;
     }
 
-    BillingSummary::new(site, Student::find_by_id(student_id).await?).await?.apply_payments().await?;
+    BillingSummary::new(site, Student::find_by_id(site, student_id).await?).await?.apply_payments().await?;
 
     Ok(payment)
   }
@@ -579,10 +590,11 @@ impl Payment {
 
       if let Some(student) = maybe_student {
         let amount = Decimal::new(i.amount_paid.ok_or(Error::validation("amount_paid", "missing"))?, 2);
-        let maybe_invoice = Invoice::query(&InvoiceQuery{
+        let maybe_invoice = Invoice::query(InvoiceQuery{
           amount: Some(amount),
           student_id: Some(student.id),
           payment_method: Some(PaymentMethod::Stripe),
+          ..Default::default()
         }).fetch_optional(&site.db).await?;
 
         Ok(Some(Payment::create(
@@ -592,7 +604,7 @@ impl Payment {
           Decimal::new(i.tax.unwrap_or(0), 2),
           PaymentMethod::Stripe,
           &serde_json::to_string(&i)?,
-          maybe_invoice
+          maybe_invoice.map(|i| i.id)
         ).await?))
       } else {
         Ok(None)
@@ -603,9 +615,10 @@ impl Payment {
   }
 
   pub async fn from_btcpay_webhook(webhook: &btcpay::Webhook, site: &Site) -> Result<Option<Payment>> {
-    let maybe_invoice = Invoice::query(&InvoiceQuery{
-      external_id: Some(webhook.id),
+    let maybe_invoice = Invoice::query(InvoiceQuery{
+      external_id: Some(webhook.invoice_id.clone()),
       payment_method: Some(PaymentMethod::BtcPay),
+      ..Default::default()
     }).fetch_optional(&site.db).await?;
 
     if let Some(invoice) = maybe_invoice {
@@ -615,7 +628,7 @@ impl Payment {
         invoice.amount,
         Decimal::ZERO,
         PaymentMethod::BtcPay,
-        "".to_string(),
+        "",
         None,
       ).await?))
     } else {
@@ -744,7 +757,7 @@ pub trait BillingCharge: Send + Sync + std::fmt::Debug {
   fn created_at(&self) -> UtcDateTime;
   fn amount(&self) -> Decimal;
   fn paid_at(&self) -> Option<UtcDateTime>;
-  fn set_paid(&mut self, site: &Site) -> sqlx::Result<()>;
+  async fn set_paid(&mut self, site: &Site) -> sqlx::Result<()>;
   fn stripe_price<'a>(&self, prices: &'a StripePlanPrices) -> &'a PriceId;
 }
 
@@ -786,13 +799,14 @@ impl BillingCharge for MonthlyCharge {
   }
 
   async fn set_paid(&mut self, site: &Site) -> sqlx::Result<()> {
-    self.paid_at = Utc.now();
+    self.paid_at = Some(Utc::now());
     self.paid = true;
     sqlx::query!(
       "UPDATE monthly_charges SET paid = true, paid_at = $2 WHERE id = $1",
+      self.id,
       self.paid_at,
-      self.id
     ).execute(&site.db).await?;
+    Ok(())
   }
 }
 
@@ -819,13 +833,14 @@ impl BillingCharge for Degree {
   }
 
   async fn set_paid(&mut self, site: &Site) -> sqlx::Result<()> {
-    self.paid_at = Utc.now();
+    self.paid_at = Some(Utc::now());
     self.paid = true;
     sqlx::query!(
       "UPDATE degrees SET paid = true, paid_at = $2 WHERE id = $1",
+      self.id,
       self.paid_at,
-      self.id
     ).execute(&site.db).await?;
+    Ok(())
   }
 }
 
@@ -852,13 +867,14 @@ impl BillingCharge for Subscription {
   }
 
   async fn set_paid(&mut self, site: &Site) -> sqlx::Result<()> {
-    self.paid_at = Utc.now();
+    self.paid_at = Some(Utc::now());
     self.paid = true;
     sqlx::query!(
       "UPDATE subscriptions SET paid = true, paid_at = $2 WHERE id = $1",
+      self.id,
       self.paid_at,
-      self.id
     ).execute(&site.db).await?;
+    Ok(())
   }
 }
 
@@ -908,7 +924,7 @@ impl BillingHistoryItem for Payment {
   }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct BillingSummary<'a> {
   #[serde(skip_serializing)]
   pub student: Student,
@@ -1032,24 +1048,22 @@ impl<'a> BillingSummary<'a> {
     self.invoice_all_not_invoiced_yet().await
   }
 
-  pub async fn apply_payments(self) -> Result<Self> {
+  pub async fn apply_payments(mut self) -> Result<()> {
     let mut available = self.balance.clone();
-    if available.is_positive() {
+    if available.is_negative() {
       return Ok(())
     }
 
     for charge in self.unpaid_charges.iter_mut() {
       if charge.amount() < available {
-        charge.set_paid(&self.site.db).await?;
+        charge.set_paid(&self.site).await?;
         available -= charge.amount();
       } else {
         break;
       }
     }
 
-    self.balance = available;
-    self.unpaid_charges = self.unpaid_charges.iter().filter(|c| c.paid_at.is_none() ).collect();
-    Ok(self)
+    Ok(())
   }
 
   async fn request_on_stripe(&self) -> Result<Option<(String, String)>> {
@@ -1086,7 +1100,7 @@ impl<'a> BillingSummary<'a> {
     let total = self.total_charges_not_invoiced_yet
       .ok_or(Error::validation("amount","Cannot request empty amount"))?;
 
-    let invoice: btcpay::Invoice = ureq::post(&format!("{}/invoices", self.site.settings.btcpay.url))
+    let invoice: btcpay::Invoice = ureq::post(&format!("{}/invoices", self.site.settings.btcpay.base_url))
       .set("Authorization", &format!("token {}", self.site.settings.btcpay.api_key))
       .send_json(serde_json::to_value(btcpay::InvoiceForm{ amount: total, currency: Currency::Eur })?)?
       .into_json()?;
@@ -1102,6 +1116,7 @@ pub enum PaymentMethod {
   BtcPay,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
 pub enum Currency {
   Eur,
   Btc,
@@ -1192,43 +1207,44 @@ impl Plan {
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct DiscordSettings {
-  guild_id: String,
-  bot_secret_token: String,
-  client_id: String,
-  student_role_id: String,
+  pub guild_id: String,
+  pub bot_secret_token: String,
+  pub client_id: String,
+  pub student_role_id: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct WordpressSettings {
-  api_url: String,
-  student_group_id: i32,
+  pub api_url: String,
+  pub student_group_id: i32,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct BtcpaySettings {
-  base_url: String,
-  store_id: String,
-  api_key: String,
+  pub base_url: String,
+  pub store_id: String,
+  pub api_key: String,
+  pub webhooks_secret: String,
 }
 
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct StripePrices {
-  global_fzth_signup: PriceId,
-  global_fzth_monthly: PriceId,
-  global_fzth_degree: PriceId,
-  latam_fzth_signup: PriceId,
-  latam_fzth_monthly: PriceId,
-  latam_fzth_degree: PriceId,
-  europe_fzth_signup: PriceId,
-  europe_fzth_monthly: PriceId,
-  europe_fzth_degree: PriceId,
+  pub global_fzth_signup: PriceId,
+  pub global_fzth_monthly: PriceId,
+  pub global_fzth_degree: PriceId,
+  pub latam_fzth_signup: PriceId,
+  pub latam_fzth_monthly: PriceId,
+  pub latam_fzth_degree: PriceId,
+  pub europe_fzth_signup: PriceId,
+  pub europe_fzth_monthly: PriceId,
+  pub europe_fzth_degree: PriceId,
 }
 
 #[derive(Debug, PartialEq)]
 struct StripePlanPrices<'a> {
-  signup: &'a PriceId,
-  monthly: &'a PriceId,
-  degree: &'a PriceId,
+  pub signup: &'a PriceId,
+  pub monthly: &'a PriceId,
+  pub degree: &'a PriceId,
 }
 
 impl StripePrices {
@@ -1284,7 +1300,6 @@ pub mod btcpay {
   use super::*;
 
   #[derive(Debug, PartialEq, Clone, Deserialize)]
-  #[serde(rename_all = "snake_case")]
   pub enum WebhookType {
     InvoiceCreated,
     InvoiceReceivedPayment,
@@ -1295,28 +1310,28 @@ pub mod btcpay {
   }
 
   #[derive(Debug, PartialEq, Clone, Deserialize)]
-  #[serde(rename_all = "snake_case")]
+  #[serde(rename_all = "camelCase")]
   pub struct Webhook {
-    pub deliveryId: String,
-    pub webhookId: String,
-    pub originalDeliveryId: String,
-    pub isRedelivery: bool,
+    pub delivery_id: String,
+    pub webhook_id: String,
+    pub original_delivery_id: String,
+    pub is_redelivery: bool,
     #[serde(rename = "type")]
     pub kind: WebhookType,
     pub timestamp: UtcDateTime,
-    pub storeId: String,
-    pub invoiceId: String,
+    pub store_id: String,
+    pub invoice_id: String,
   }
 
   #[derive(Debug, Deserialize)]
-  #[serde(rename_all = "snake_case")]
+  #[serde(rename_all = "camelCase")]
   pub struct Invoice {
     pub id: String,
     pub checkout_link: String,
   }
 
   #[derive(Debug, Serialize)]
-  #[serde(rename_all = "snake_case")]
+  #[serde(rename_all = "camelCase")]
   pub struct InvoiceForm {
     pub amount: Decimal,
     pub currency: Currency,

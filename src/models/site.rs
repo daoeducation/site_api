@@ -20,15 +20,15 @@ pub struct SiteSettings {
 }
 
 impl SiteSettings {
-  pub async fn into_site(&self) -> Result<Site> {
-    self.stripe_prices.validate_all(&self.stripe()).await?;
+  pub async fn into_site(self) -> Result<Site> {
     let stripe = Client::new(&self.stripe_secret_key);
+    self.stripe_prices.validate_all(&stripe).await?;
     let db = PgPoolOptions::new()
       .max_connections(5)
       .connect(&self.database_uri)
       .await?;
 
-    Site{ stripe, db, settings: self }
+    Ok(Site{ stripe, db, settings: self })
   }
 }
 
@@ -57,6 +57,7 @@ mod test {
         stripe_secret_key="sk_test_example"
         stripe_public_key = "pk_test_example"
         checkout_domain="http://example.com"
+        database_uri="postgres://daoe:password@localhost/daoe_development"
 
         [global.discord]
         guild_id="1000"
@@ -69,7 +70,7 @@ mod test {
         student_group_id=1
 
         [global.btcpay]
-        base_url = "https://btcpay.constata.eu
+        base_url = "https://btcpay.constata.eu"
         store_id = "AAABBBCCCDDD"
         api_key = "ABCD12345"
         webhooks_secret = "SUPERSECRET"
@@ -87,7 +88,7 @@ mod test {
     "#,
     );
 
-    let site: Site = Figment::new()
+    let site: SiteSettings = Figment::new()
       .merge(provider)
       .extract_inner("global")
       .expect("Config could not be parsed");
@@ -96,12 +97,28 @@ mod test {
 
     assert_eq!(
       site,
-      Site {
+      SiteSettings {
         secret_key: "BEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEF".into(),
         stripe_secret_key: "sk_test_example".into(),
         stripe_public_key: "pk_test_example".into(),
         checkout_domain: "http://example.com".into(),
         database_uri: "postgres://daoe:password@localhost/daoe_development".into(),
+        discord: DiscordSettings{
+          guild_id: "1000".into(),
+          bot_secret_token: "SUPERSECRET".into(),
+          client_id: "1002".into(),
+          student_role_id: "1001".into(),
+        },
+        wordpress: WordpressSettings {
+          api_url: "https://user:password@daocriptoacademy.com/wp-json/".into(),
+          student_group_id: 1,
+        },
+        btcpay: BtcpaySettings {
+          base_url: "https://btcpay.constata.eu".into(),
+          store_id: "AAABBBCCCDDD".into(),
+          api_key: "ABCD12345".into(),
+          webhooks_secret: "SUPERSECRET".into(),
+        },
         stripe_prices: StripePrices {
           global_fzth_signup: mkprice("1"),
           global_fzth_monthly: mkprice("2"),

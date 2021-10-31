@@ -12,7 +12,7 @@ use rocket::{
 use crate::error::*;
 use crate::models::*;
 use sha2::Sha256;
-use hmac::Hmac;
+use hmac::{Hmac, Mac, NewMac};
 
 // Create alias for HMAC-SHA256
 type HmacSha256 = Hmac<Sha256>;
@@ -38,36 +38,40 @@ impl<'r> FromData<'r> for btcpay::Webhook {
   async fn from_data(req: &'r Request<'_>, data: Data<'r>) -> data::Outcome<'r, Self> {
     use Error::*;
     use rocket::outcome::Outcome::*;
+    use rocket::data::Outcome;
 
     let secret = req
       .rocket()
       .state::<Site>()
       .expect("SITE not configured")
+      .settings
       .btcpay
-      .webhooks_secret;
+      .webhooks_secret
+      .clone();
 
     let maybe_signature = req.headers().get_one("BTCPay-Sig").and_then(|x| hex::decode(x).ok());
-
 
     match maybe_signature {
       None => return Outcome::Forward(data),
       Some(sig) => {
         let bytes = match data.open(2048.bytes()).into_bytes().await {
           Ok(read) if read.is_complete() => read.into_inner(),
-          Ok(_) => return Outcome::Failure((Status::PayloadTooLarge, "payload too large")),
-          Err(_) => return Outcome::Failure((Status::BadRequest, "Bad request, can't read body.")),
+          Ok(_) => return Outcome::Failure((Status::PayloadTooLarge, Error::validation("payload", "payload too large"))),
+          Err(_) => return Outcome::Failure((Status::BadRequest, Error::validation("body", "Bad request, can't read body."))),
         };
 
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-          .expect("HMAC can take key of any size");
+        let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
+          Err(_) => return Outcome::Failure((Status::BadRequest, Error::validation("body", "Unexpected error processing hmac"))),
+          Ok(a) => a
+        };
         mac.update(&bytes);
 
         match mac.verify(&sig) {
-          Err(e) => Outcome::Failure((Status::BadRequest, e)),
+          Err(e) => Outcome::Failure((Status::BadRequest, Error::validation("bad sig", "invalid webhook signature"))),
           _ => {
             match serde_json::from_slice(&bytes) {
               Ok(webhook) => Outcome::Success(webhook),
-              _ => Outcome::Failure((Status::BadRequest, "No webhook parsed")),
+              _ => Outcome::Failure((Status::BadRequest, Error::validation("body", "No webhook parsed"))),
             }
           }
         }
@@ -75,4 +79,3 @@ impl<'r> FromData<'r> for btcpay::Webhook {
     }
   }
 }
-
