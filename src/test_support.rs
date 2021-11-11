@@ -25,12 +25,13 @@ pub fn run_test<F: Future<Output = Result<(), anyhow::Error>>>(future: F) {
 
 #[macro_export]
 macro_rules! test {
-  ($i:ident($client:ident, $db:ident) $($e:tt)* ) => {
+  ($i:ident($client:ident, $site:ident) $($e:tt)* ) => {
     #[test]
     fn $i() {
       run_test(async move {
-        let $db = TestDb::new().await;
-        let $client = PublicApiClient::new(crate::server(), $db).await;
+        crate::test_support::reset_database().await;
+        let $site = crate::models::SiteSettings::default().into_site().await.unwrap();
+        let $client = PublicApiClient::new(crate::server()).await;
         {$($e)*};
         Ok(())
       })
@@ -38,36 +39,23 @@ macro_rules! test {
   }
 }
 
-#[derive(Clone)]
-pub struct TestDb(pub Db);
+pub async fn reset_database() {
+  let database_uri = std::env::var("ROCKET_DATABASE_URI").unwrap_or_else(|_| {
+    "postgres://daoe:password@localhost/daoe_development".to_string()
+  });
 
-impl TestDb {
-  pub async fn new() -> Self {
-    let database_uri = std::env::var("ROCKET_DATABASE_URI").unwrap_or_else(|_| {
-      "postgres://daoe:password@localhost/daoe_development".to_string()
-    });
+  let output = Command::new("sqlx")
+    .args(&["-D", &database_uri, "database", "reset", "-y"])
+    .output()
+    .unwrap();
 
-    let output = Command::new("sqlx")
-      .args(&["-D", &database_uri, "database", "reset", "-y"])
+  if !output.status.success() {
+    // the -y option fails unless the script detects it's running in a terminal.
+    // And for whatever reason, it detects a terminal in macos but not on linux.
+    let _two = Command::new("sqlx")
+      .args(&["-D", &database_uri, "database", "reset"])
       .output()
       .unwrap();
-
-    if !output.status.success() {
-      // the -y option fails unless the script detects it's running in a terminal.
-      // And for whatever reason, it detects a terminal in macos but not on linux.
-      let _two = Command::new("sqlx")
-        .args(&["-D", &database_uri, "database", "reset"])
-        .output()
-        .unwrap();
-    }
-
-    let pool = PgPoolOptions::new()
-      .max_connections(10)
-      .connect(&database_uri)
-      .await
-      .expect("Could not establish connection");
-
-    Self(pool)
   }
 }
 
@@ -78,14 +66,12 @@ pub struct ApiError {
 
 pub struct PublicApiClient {
   pub client: Client,
-  c: TestDb,
 }
 
 impl PublicApiClient {
-  pub async fn new(server: rocket::Rocket<rocket::Build>, c: TestDb) -> Self {
+  pub async fn new(server: rocket::Rocket<rocket::Build>) -> Self {
     Self {
       client: Client::tracked(server).await.unwrap(),
-      c,
     }
   }
 
@@ -110,7 +96,6 @@ impl PublicApiClient {
 
   pub async fn get<T: DeserializeOwned, P: std::fmt::Display>(&self, path: P) -> T {
     let response = self.raw_get(path).await;
-    dbg!(&response);
     serde_json::from_str(&response).expect(&format!("Could not parse response {}", response))
   }
 

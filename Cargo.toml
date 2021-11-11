@@ -24,6 +24,7 @@ ureq = { version = "2.2.0", features = ["json"] }
 hmac = "0.11.0"
 sha2 = "0.9.8"
 hex = "0.4.3"
+base64 = "*"
 
 [dependencies.stripe-rust]
 path = "/home/nubis/stripe-rs"

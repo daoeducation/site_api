@@ -1,9 +1,47 @@
 [global]
-secret_key="BEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEF"
-stripe_secret_key="sk_test_example"
-stripe_public_key = "pk_test_example"
-checkout_domain="http://example.com"
+database_uri="postgres://user:password@localhost/daoe_development"
+secret_key="SOMESECRETKEY"
+stripe_secret_key="sk_test_something"
+stripe_public_key="pk_test_something"
+stripe_events_secret="whsec_something"
+checkout_domain="http://127.0.0.1:31337"
+admin_key="superadmin"
 
-[global.programs]
-zero_to_hero = "price_one"
-academy = "price_two"
+[global.discord]
+guild_id="111111111111"
+bot_secret_token="secretkeyfortherobot"
+client_id="someid"
+student_role_id="somerole"
+
+[global.wordpress]
+api_url="https://daocriptoacademy.com/wp-json"
+user="nubis"
+pass="passwordsete"
+student_group_id=4046
+
+[global.btcpay]
+base_url = "https://btcpay.constata.eu"
+store_id = "479Q1PebPaaCJyqa3r1CdPQxtiRa92LgZZhRvmPHb4nv"
+api_key = "theapikey"
+webhooks_secret = "superwebhooksecret"
+
+[global.pricing]
+global = { code = "global", signup = 200, monthly = 60, degree = 500 }
+europe = { code = "europe", signup = 150, monthly = 45, degree = 375 }
+latam  = { code = "latam",  signup = 100, monthly = 30, degree = 250 }
+guest  = { code = "guest",  signup =   0, monthly =  0, degree =   0 }
+
+[global.sendinblue]
+api_key = "xkeysib-sendinblueapikey"
+
+[global.stripe_prices]
+global_fzth_signup="price_1Jda6gDVE5TJAnJjfyz8wcu2"
+global_fzth_monthly="price_1Jda7IDVE5TJAnJj1HxH8NMq"
+global_fzth_degree="price_1Jda82DVE5TJAnJjOdknlgGw"
+latam_fzth_signup="price_1JdZzEDVE5TJAnJj5g280aml"
+latam_fzth_monthly="price_1Jda0FDVE5TJAnJjgij35BgN"
+latam_fzth_degree="price_1Jda2IDVE5TJAnJjx1W1pvuh"
+europe_fzth_signup="price_1Jda3HDVE5TJAnJjNsxzkbXe"
+europe_fzth_monthly="price_1Jda3rDVE5TJAnJjB97hQUYl"
+europe_fzth_degree="price_1Jda5aDVE5TJAnJjvB3HRKZu"
+

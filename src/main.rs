@@ -17,17 +17,17 @@ mod error;
 
 mod models;
 
-use models::{SiteSettings, Site};
+use models::SiteSettings;
 
 use tera::Tera;
 
 lazy_static! {
   pub static ref TEMPLATES: Tera = {
     let mut tera = Tera::default();
-    tera.add_raw_template(
-      "checkout_sessions/show",
-      include_str!("templates/checkout_sessions/show.html.tera")
-    ).expect("No static");
+    tera.add_raw_templates([
+      ("emails/welcome", include_str!("templates/emails/welcome.html.tera")),
+      ("emails/payment_link", include_str!("templates/emails/payment_link.html.tera"))
+    ]).expect("No static");
     tera
   };
 }
@@ -36,18 +36,16 @@ pub fn server() -> rocket::Rocket<rocket::Build> {
   rocket::build()
     .mount("/payments/", routes![
       payments::handle_stripe_events,
-      payments::handle_coingate_callbacks,
+      payments::handle_btcpay_webhooks,
+      payments::from_invoice,
     ])
     .mount("/students", routes![
       students::create,
       students::show,
-      students::pay_now,
+      students::discord_success,
     ])
     .attach(AdHoc::on_ignite("Site config", |rocket| async {
-      let site = rocket
-        .figment()
-        .extract::<SiteSettings>()
-        .expect("Config could not be parsed")
+      let site = SiteSettings::default()
         .into_site()
         .await
         .expect("Could not validate site state");
@@ -66,92 +64,65 @@ mod test_support;
 
 #[cfg(test)]
 mod test {
-  use crate::{test, test_support::*};
-  use super::models::*;
+  use crate::{models::*, test, test_support::*};
+  use chrono::prelude::*;
+  use chronoutil::relative_duration::RelativeDuration;
 
-  test!{ full_signup_workflow(client, db) 
-    let link: String = client.post("/students/",
+  test!{ full_signup_workflow(client, site) 
+    let res = client.post::<serde_json::Value, _>("/students/",
       serde_json::json![{
-        "email": "test@dao.education",
+        "email": "yo+testing@nubis.im",
         "full_name": "Testing Testinger",
         "phone": "+23232332",
         "tax_number": "$$$$$$",
-        "referral_code": "LATAMPROMO",
-        "payment_method": "CoinGateBtc",
+        "tax_address": "blablabla country spain",
+        "payment_method": "BtcPay",
       }].to_string()
     ).await;
+    let mut state = res.get("billing").unwrap().clone();
 
-    let token = link[39..].to_string();
-    let profile_link = link[22..].to_string();
+    assert_eq!(state.get("invoices").unwrap().as_array().unwrap().len(), 1);
+    assert_eq!(state.get("unpaid_charges").unwrap().as_array().unwrap().len(), 2);
+    assert_eq!(state.get("balance").unwrap().as_str().unwrap(), "-130");
 
-    let profile: serde_json::Value = client.get(&profile_link).await;
-    assert_eq!(1, profile.get("billing").unwrap().get("invoices").unwrap().as_array().unwrap().len());
+    assert_that!(&state
+      .get("invoices").unwrap()
+      .get(0).unwrap()
+      .get("url").unwrap()
+      .as_str()
+      .unwrap()
+      .to_string(),
+      rematch("btcpay.constata.eu")
+    );
 
-    let invoice: Invoice = client.post(&format!("/students/pay_now?token={}", token), "").await;
+    client.post::<serde_json::Value, _>("/payments/from_invoice/?invoice_id=1&admin_key=adminusertoken", "").await;
 
-    assert_that!(&invoice.url, rematch("https://pay-sandbox.coingate.com/bill/"));
+    let fetch_user_billing = || async {
+      let res = client.get::<serde_json::Value, _>("/students/1?admin_key=adminusertoken").await;
+      res.get("billing").unwrap().clone()
+    };
 
-    let callback = serde_json::json![{
-      "id":421,
-      "status":"paid",
-      "paid_at":"2021-10-13T09:52:20.000Z",
-      "price_amount":"130.0",
-      "price_currency":"EUR",
-      "created_at":"2021-10-13T09:49:53.000Z",
-      "expire_at":"2021-10-18T09:49:53.000Z",
-      "subscription":{
-        "id":390,
-        "subscription_id":"370",
-        "status":"completed",
-        "start_date":"2021-10-13",
-        "end_date":"2021-10-13",
-        "due_days_period":5,
-        "created_at":"2021-10-13T09:39:22.000Z",
-        "subscriber": {
-          "id":370,
-          "email":"test@dao.education",
-          "subscriber_id":"1",
-          "organisation_name":null,
-          "first_name":null,
-          "last_name":null,
-          "address":null,
-          "secondary_address":null,
-          "city":null,
-          "postal_code":null,
-          "country":null
-        },
-        "details":{
-          "id":365,
-          "title":"DAO.Education",
-          "description":"Pago mensual",
-          "send_paid_notification":null,
-          "payment_method":"instant",
-          "price_currency":null,
-          "details_id":"370",
-          "receive_currency":"BTC",
-          "callback_url":"https://yourcallbackurl.com",
-          "items":[
-            {"id":453,"item_id":"mensual","description":"pago mensual","quantity":1,"price":"30.0"},
-            {"id":454,"item_id":"Inscripción","description":"Inscripción","quantity":1,"price":"100.0"}
-          ]
-        }
-      }
-    }];
+    state = fetch_user_billing().await;
+    assert!(state.get("invoices").unwrap().as_array().unwrap().is_empty());
+    assert!(state.get("unpaid_charges").unwrap().as_array().unwrap().is_empty());
+    assert_eq!(state.get("balance").unwrap().as_str().unwrap(), "0");
 
-    let response: String = client.post("/payments/handle_coingate_callbacks", callback.to_string()).await;
+    let student = Student::find_by_id(&site, 1).await.unwrap();
+    let billing_summary = BillingSummary::new(&site, student.clone()).await.unwrap();
+    billing_summary.create_monthly_charges_for(&Utc::today()).await;
 
-    let new_profile: serde_json::Value = client.get(&profile_link).await;
-    assert!(new_profile.get("billing").unwrap().get("invoices").unwrap().as_array().unwrap().is_empty());
+    state = fetch_user_billing().await;
+    assert!(state.get("invoices").unwrap().as_array().unwrap().is_empty());
+    assert!(state.get("unpaid_charges").unwrap().as_array().unwrap().is_empty());
+    assert_eq!(state.get("balance").unwrap().as_str().unwrap(), "0");
 
-    dbg!(&new_profile.get("discord_verification_link"));
+    for _ in 0..3 {
+      billing_summary.create_monthly_charges_for(&(Utc::today() + RelativeDuration::months(1))).await;
+    }
 
-    //let response: serde_json::Value = client.get("/students/discord_success#token_type=Bearer&access_token=AWsigs2tu3Q9jQoiLmlDpXC7OICzdl&expires_in=604800&scope=identify+email", callback.to_string()).await;
-    //  Cuando se marca como pagada una subscripcion, se hace el proceso de bienvenida.
-    //    - Le manda mail de bienvenida.
-    //    - A partir de ahora cuando se esté loggeado en wordpress, en la pagina.
-
+    state = fetch_user_billing().await;
+    assert_eq!(state.get("invoices").unwrap().as_array().unwrap().len(), 1);
+    assert_eq!(state.get("unpaid_charges").unwrap().as_array().unwrap().len(), 1);
+    assert_eq!(state.get("balance").unwrap().as_str().unwrap(), "-30");
   }
-
-  // Crear una nueva subscripción cancela la anterior.
-  // Puede crear una cuenta con stripe y recibe un IPN.
 }

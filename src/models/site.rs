@@ -1,8 +1,9 @@
-use super::{StripePrices, DiscordSettings, WordpressSettings, BtcpaySettings};
+use super::{StripePrices, DiscordSettings, WordpressSettings, BtcpaySettings, SendinblueSettings, Plans};
 use serde::{Deserialize, Serialize};
 use stripe::Client;
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use crate::error::*;
+use rocket::Config;
 
 pub type Db = PgPool;
 
@@ -10,16 +11,24 @@ pub type Db = PgPool;
 pub struct SiteSettings {
   pub secret_key: String,
   pub checkout_domain: String,
+  pub admin_key: String,
   pub stripe_secret_key: String,
   pub stripe_public_key: String,
   pub stripe_prices: StripePrices,
+  pub stripe_events_secret: String,
   pub database_uri: String,
   pub discord: DiscordSettings,
   pub wordpress: WordpressSettings,
   pub btcpay: BtcpaySettings,
+  pub sendinblue: SendinblueSettings,
+  pub pricing: Plans,
 }
 
 impl SiteSettings {
+  pub fn default() -> SiteSettings {
+    Config::figment().extract().expect("Config could not be parsed")
+  }
+
   pub async fn into_site(self) -> Result<Site> {
     let stripe = Client::new(&self.stripe_secret_key);
     self.stripe_prices.validate_all(&stripe).await?;
@@ -47,6 +56,8 @@ mod test {
   };
   use std::str::FromStr;
   use stripe::PriceId;
+  use sqlx::types::Decimal;
+  use crate::models::{PlanCode, Plan};
 
   #[test]
   fn site_config_parsing() {
@@ -56,8 +67,16 @@ mod test {
         secret_key="BEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEF"
         stripe_secret_key="sk_test_example"
         stripe_public_key = "pk_test_example"
+        stripe_events_secret="supersecret"
         checkout_domain="http://example.com"
         database_uri="postgres://daoe:password@localhost/daoe_development"
+        admin_key="supersecret"
+
+        [global.pricing]
+        global = { code = "global", signup = 200, monthly = 60, degree = 500 }
+        europe = { code = "europe", signup = 150, monthly = 45, degree = 375 }
+        latam = { code = "latam",  signup = 100, monthly = 30, degree = 250 }
+        guest = { code = "guest",  signup =   0, monthly =  0, degree =   0 }
 
         [global.discord]
         guild_id="1000"
@@ -66,7 +85,9 @@ mod test {
         student_role_id="1001"
 
         [global.wordpress]
-        api_url="https://user:password@daocriptoacademy.com/wp-json/"
+        api_url="https://daocriptoacademy.com/wp-json/"
+        user="user"
+        pass="password"
         student_group_id=1
 
         [global.btcpay]
@@ -74,6 +95,9 @@ mod test {
         store_id = "AAABBBCCCDDD"
         api_key = "ABCD12345"
         webhooks_secret = "SUPERSECRET"
+
+        [global.sendinblue]
+        api_key = "Sendinblueapikey"
 
         [global.stripe_prices]
         global_fzth_signup= "1"
@@ -101,8 +125,36 @@ mod test {
         secret_key: "BEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEFBEEF".into(),
         stripe_secret_key: "sk_test_example".into(),
         stripe_public_key: "pk_test_example".into(),
+        stripe_events_secret: "supersecret".into(),
         checkout_domain: "http://example.com".into(),
         database_uri: "postgres://daoe:password@localhost/daoe_development".into(),
+        admin_key: "supersecret".into(),
+        pricing: Plans{
+          global: Plan{
+            code: PlanCode::Global,
+            signup: Decimal::new(200,0),
+            monthly: Decimal::new(60,0),
+            degree: Decimal::new(500,0),
+          },
+          europe: Plan{
+            code: PlanCode::Europe,
+            signup: Decimal::new(150,0),
+            monthly: Decimal::new(45,0),
+            degree: Decimal::new(375,0),
+          },
+          latam: Plan{
+            code: PlanCode::Latam,
+            signup: Decimal::new(100,0),
+            monthly: Decimal::new(30,0),
+            degree: Decimal::new(250,0),
+          },
+          guest: Plan{
+            code: PlanCode::Guest,
+            signup: Decimal::ZERO,
+            monthly: Decimal::ZERO,
+            degree: Decimal::ZERO,
+          },
+        },
         discord: DiscordSettings{
           guild_id: "1000".into(),
           bot_secret_token: "SUPERSECRET".into(),
@@ -110,7 +162,9 @@ mod test {
           student_role_id: "1001".into(),
         },
         wordpress: WordpressSettings {
-          api_url: "https://user:password@daocriptoacademy.com/wp-json/".into(),
+          api_url: "https://daocriptoacademy.com/wp-json/".into(),
+          user: "user".into(),
+          pass: "password".into(),
           student_group_id: 1,
         },
         btcpay: BtcpaySettings {
@@ -118,6 +172,9 @@ mod test {
           store_id: "AAABBBCCCDDD".into(),
           api_key: "ABCD12345".into(),
           webhooks_secret: "SUPERSECRET".into(),
+        },
+        sendinblue: SendinblueSettings {
+          api_key: "Sendinblueapikey".into(),
         },
         stripe_prices: StripePrices {
           global_fzth_signup: mkprice("1"),

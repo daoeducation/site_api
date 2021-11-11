@@ -1,0 +1,20 @@
+<html>
+  <head></head>
+  <body>
+    <p>Hola <strong>{{ full_name }}</strong></p>
+
+    <p>Te escribimos porque generamos un link de pago para tu cuenta de DAO Education</p>
+
+    <p>
+      Puedes visitar este link para hacer el pago:
+      <br/>
+      {{ checkout_link }}
+    </p>
+
+    <p>
+      Si ya pagaste, puedes ignorar este email. Ante cualquier duda, escríbenos a tesoreria@dao.education
+      <br/>
+      Un gran saludo!
+    </p>
+  </body>
+</html>

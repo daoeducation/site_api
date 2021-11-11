@@ -33,16 +33,6 @@ CREATE TABLE students (
 CREATE INDEX student_subscription ON students (current_subscription_id);
 CREATE INDEX student_email ON students (email);
 
-CREATE TABLE session_tokens (
-  id SERIAL PRIMARY KEY NOT NULL,
-  student_id INTEGER NOT NULL,
-  value VARCHAR NOT NULL,
-  expires_on TIMESTAMPTZ NOT NULL
-);
-
-CREATE INDEX session_tokens_for_student ON session_tokens (student_id);
-CREATE INDEX session_tokens_value ON session_tokens (value);
-
 CREATE TABLE subscriptions (
   id SERIAL PRIMARY KEY NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -63,6 +53,7 @@ CREATE INDEX subscription_active ON subscriptions (active);
 CREATE TABLE monthly_charges (
   id SERIAL PRIMARY KEY NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  billing_period TIMESTAMPTZ NOT NULL,
   subscription_id INTEGER NOT NULL,
   student_id INTEGER NOT NULL,
   price DECIMAL NOT NULL,
@@ -110,6 +101,7 @@ CREATE TABLE invoices (
   description TEXT NOT NULL,
   external_id VARCHAR NOT NULL,
   url TEXT NOT NULL,
+  notified_on TIMESTAMPTZ,
   paid BOOLEAN NOT NULL DEFAULT FALSE,
   payment_id INTEGER,
   expired BOOLEAN NOT NULL DEFAULT FALSE
