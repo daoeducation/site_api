@@ -41,6 +41,7 @@ impl SiteSettings {
   }
 }
 
+#[derive(Clone)]
 pub struct Site {
   pub db: Db,
   pub stripe: Client,

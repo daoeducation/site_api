@@ -25,6 +25,7 @@ hmac = "0.11.0"
 sha2 = "0.9.8"
 hex = "0.4.3"
 base64 = "*"
+sqlx-models-derive = { path = "../../sqlx-models-derive" }
 
 [dependencies.stripe-rust]
 path = "/home/nubis/stripe-rs"
@@ -40,3 +41,19 @@ regex = "1"
 guerrilla = "0.1.4"
 mockito = "0.28"
 anyhow = "*"
+
+[lib]
+path = "src/lib.rs"
+name = "daoe_api"
+
+[[bin]]
+path = "src/main.rs"
+name = "api_server"
+
+[[bin]]
+path = "src/worker.rs"
+name = "worker"
+
+[[bin]]
+path = "src/migrator.rs"
+name = "migrator"

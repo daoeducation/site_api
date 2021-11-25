@@ -1,36 +1,12 @@
-#[macro_use]
-extern crate rocket;
+use rocket::{routes, fairing::AdHoc};
 
-#[macro_use]
-extern crate lazy_static;
+use daoe_api::{
+  models::SiteSettings,
+  controllers::*
+};
 
-extern crate tera;
-
-extern crate serde_derive;
-extern crate stripe;
-
-use rocket::fairing::AdHoc;
-
-mod controllers;
-use controllers::*;
-mod error;
-
-mod models;
-
-use models::SiteSettings;
-
-use tera::Tera;
-
-lazy_static! {
-  pub static ref TEMPLATES: Tera = {
-    let mut tera = Tera::default();
-    tera.add_raw_templates([
-      ("emails/welcome", include_str!("templates/emails/welcome.html.tera")),
-      ("emails/payment_link", include_str!("templates/emails/payment_link.html.tera"))
-    ]).expect("No static");
-    tera
-  };
-}
+#[cfg(test)]
+pub mod test_support;
 
 pub fn server() -> rocket::Rocket<rocket::Build> {
   rocket::build()
@@ -60,12 +36,9 @@ fn rocket() -> rocket::Rocket<rocket::Build> {
 }
 
 #[cfg(test)]
-mod test_support;
-
-#[cfg(test)]
 mod test {
-  use crate::{models::*, test, test_support::*};
-  use chrono::prelude::*;
+  use daoe_api::{models::*};
+  use crate::{test, test_support::*};
   use chronoutil::relative_duration::RelativeDuration;
 
   test!{ full_signup_workflow(client, site) 
@@ -107,17 +80,17 @@ mod test {
     assert!(state.get("unpaid_charges").unwrap().as_array().unwrap().is_empty());
     assert_eq!(state.get("balance").unwrap().as_str().unwrap(), "0");
 
-    let student = Student::find_by_id(&site, 1).await.unwrap();
-    let billing_summary = BillingSummary::new(&site, student.clone()).await.unwrap();
-    billing_summary.create_monthly_charges_for(&Utc::today()).await;
+    let student = site.student().find_by_id(1).await.unwrap();
+    let billing_summary = BillingSummary::new(student.clone()).await.unwrap();
+    billing_summary.create_monthly_charges_for(&Utc::today()).await.unwrap();
 
     state = fetch_user_billing().await;
     assert!(state.get("invoices").unwrap().as_array().unwrap().is_empty());
     assert!(state.get("unpaid_charges").unwrap().as_array().unwrap().is_empty());
     assert_eq!(state.get("balance").unwrap().as_str().unwrap(), "0");
 
-    for _ in 0..3 {
-      billing_summary.create_monthly_charges_for(&(Utc::today() + RelativeDuration::months(1))).await;
+    for _ in 0..3i32 {
+      billing_summary.create_monthly_charges_for(&(Utc::today() + RelativeDuration::months(1))).await.unwrap();
     }
 
     state = fetch_user_billing().await;

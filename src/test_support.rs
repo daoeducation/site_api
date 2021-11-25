@@ -1,5 +1,3 @@
-use crate::models::*;
-use sqlx::postgres::PgPoolOptions;
 use std::process::Command;
 use rocket::{
   http::{Header, Status},
@@ -30,7 +28,7 @@ macro_rules! test {
     fn $i() {
       run_test(async move {
         crate::test_support::reset_database().await;
-        let $site = crate::models::SiteSettings::default().into_site().await.unwrap();
+        let $site = daoe_api::models::SiteSettings::default().into_site().await.unwrap();
         let $client = PublicApiClient::new(crate::server()).await;
         {$($e)*};
         Ok(())

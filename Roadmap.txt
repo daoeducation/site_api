@@ -1,0 +1,39 @@
+Alta de alumno via la web:
+  - El usuario completa el form de DAO.E.
+  - Se crea un nuevo Student con los datos personales.
+    * También lo metemos en mailchimp.
+  - Se crea una nueva Subscription para ese student. No está activa hasta que se pague. El pricing va a estar dado por el código de descuento que nos haya dado.
+  - Se crea un cargo mensual por el primer mes, el pricing va a estar dado por el pricing de la subscripción.
+  - Lo mandamos a la página de pagos donde mostramos ambos cargos pendientes que tiene, el total, y lo dejamos elegir la forma de pago.
+  - Elige una forma de pago, entonces le creamos un "Payment" con esa forma de pago y el monto total de los cargos (un charge de stripe, Payment de Bitex, no se paypal). Lo redireccionamos a al web del procesador del pago.
+
+  - Lo redireccionamos a la página de éxito y le decimos que puede llevar unos minutos procesar el pago, que revise su mail.
+
+  - Se procesa correctamente el pago (nos llega un IPN). Se carga el saldo en la cuenta del usuario y se aplica al pago de los cargos pendientes.
+  
+  - La Subscription y el cargo se pasan a 'paid' y 'active', al pasarse a active podemos decir que el alumno ya es alumno regular.
+    * Le creamos un usuario en wordpress y le ponemos un password nuevo.
+    * Le mandamos el mail de bienvenida
+      Mail de Bienvenida:
+        + Le cuenta algunas cosas propias del curso.
+        + Incluye el link para vincular su usuario de discord.
+        + Incluye el link a ingresar a las clases.
+
+Vinculación de Discord:
+  Cuando vincula su cuenta de discord:
+  - Se asigna el discord_user en el student.
+  - Se le dan permisos a ese usuario de discord, se lo mete en el grupo estudiantes.
+
+  Desvinculación de discord:
+  - Se des-asigna el discord_user.
+
+
+Cobros mensuales:
+El proceso de facturación se ejecuta todos los días.
+Entre todos las subscripciones que tienen su invoicing_day = a este, o si este es el último día del mes, todas las subscripciones que lo tienen mayor a este día.
+Se crea una cantidad de monthly_charges, y por cada uno de ellos se manda un email al cliente con el link para elegir la forma de pago.
+
+
+Página de pagos / Estado de subscripción:
+La página de subscripción se muestra con un "link mágico". Los links mágicos empiezan a tener vencimiento una vez usados. Cuando recibimos un link expirado le escribimos al usuario diciendo:
+"Vimos que alguien intentó ingresar a tu perfil de cuenta. Si fuiste tu, el link nuevo es este, si no fuiste tu, alguien debio haber entrado a tu historial e intentó ingresar."

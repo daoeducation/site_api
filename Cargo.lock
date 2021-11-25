@@ -429,6 +429,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlx",
+ "sqlx-models-derive",
  "stripe-rust",
  "tera",
  "thiserror",
@@ -2255,6 +2256,14 @@ dependencies = [
  "sqlx-rt",
  "syn",
  "url",
+]
+
+[[package]]
+name = "sqlx-models-derive"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn",
 ]
 
 [[package]]

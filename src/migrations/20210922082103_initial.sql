@@ -35,8 +35,8 @@ CREATE INDEX student_email ON students (email);
 
 CREATE TABLE subscriptions (
   id SERIAL PRIMARY KEY NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  invoicing_day INTEGER NOT NULL DEFAULT EXTRACT(day FROM now()),
+  created_at TIMESTAMPTZ NOT NULL,
+  invoicing_day INTEGER NOT NULL,
   student_id INTEGER NOT NULL,
   active BOOLEAN NOT NULL DEFAULT FALSE, -- Should we keep charging this every month?
   plan_code VARCHAR NOT NULL, -- Full, 50% off, 25% off, Free.

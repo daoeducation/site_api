@@ -1,9 +1,25 @@
 #!/bin/bash
 
-scp target/release/daoeducation root@$1:/var/www/dao.education/daoeducation_new &&
-  ssh root@$1 'chown www-data.www-data /var/www/dao.education/daoeducation_new &&
-  systemctl stop daoe_api &&
-  mv /var/www/dao.education/daoeducation /var/www/dao.education/daoeducation_old &&
-  mv /var/www/dao.education/daoeducation_new /var/www/dao.education/daoeducation &&
-  chmod +x /var/www/dao.education/daoeducation &&
-  systemctl start daoe_api'
+echo Compiling for release &&
+cargo build --release --bin migrator --bin worker --bin api_server &&
+rm -rf /tmp/deploy-files &&
+mkdir /tmp/deploy-files &&
+cp target/release/{migrator,api_server,worker} /tmp/deploy-files &&
+echo "Copying deploy files" &&
+scp -r /tmp/deploy-files root@$1:/var/www/dao.education &&
+ssh root@$1 '
+cd /var/www/dao.education &&
+echo "Changing ownership" &&
+chown -R www-data.www-data deploy-files &&
+echo "Stopping servers" &&
+systemctl stop daoe_api worker &&
+echo "Backing up old files, moving in new ones" &&
+for f in "api_server" "migrator" "worker";
+  do mv $f $f.old;
+  mv deploy-files/$f .;
+done &&
+echo "Running migrations" &&
+./migrator &&
+echo "Start new servers" &&
+systemctl start worker daoe_api &&
+systemctl status daoe_api worker'
