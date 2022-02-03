@@ -43,6 +43,7 @@ pub async fn reset_database() {
   });
 
   let output = Command::new("sqlx")
+    .current_dir("src")
     .args(&["-D", &database_uri, "database", "reset", "-y"])
     .output()
     .unwrap();
@@ -51,6 +52,7 @@ pub async fn reset_database() {
     // the -y option fails unless the script detects it's running in a terminal.
     // And for whatever reason, it detects a terminal in macos but not on linux.
     let _two = Command::new("sqlx")
+      .current_dir("src")
       .args(&["-D", &database_uri, "database", "reset"])
       .output()
       .unwrap();
@@ -81,7 +83,7 @@ impl PublicApiClient {
     let string = self
       .client
       .post(path)
-      .header(Header::new("HTTP_CF_IPCOUNTRY", "AR"))
+      .header(Header::new("cf-ipcountry", "AR"))
       .body(body)
       .dispatch()
       .await

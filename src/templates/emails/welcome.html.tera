@@ -7,27 +7,30 @@
       Te escribimos para darte la bienvenida a DAO Education y acompañarte en tus primeros pasos de esta experiencia educativa.
     </p>
 
-    <h3>Acerca de las clases grabadas</h3>
+    <h3>Programa de nivelación</h3>
 
     <p>
-      Nuestra plataforma online es la misma en la que completaste el formulario de inscripción.
+      Nuestra plataforma de nivelación online es la misma en la que completaste el formulario de inscripción.
       <br/>
-      Ahí vas a poder ver lecciones grabadas de todos los módulos que cubre el programa.
+      Ahí vas a poder ver lecciones grabadas con todos los temas que necesitas dominar antes de lanzarte
+      a tu propia aventura DAO.
       <br/>
-      Tienes que hacerlas en órden, al final de cada módulo un breve cuestionario te va a ayudar a evaluar si entendiste todo.
+      Las clases están organizadas en módulos, y al final de cada uno un breve cuestionario te va a ayudar a evaluar
+      si entendiste todo.
     </p>
 
     <p>
-      Para ver las clases ingresa a <a href="https://daocriptoacademy.com/wp-login.php">https://daocriptoacademy.com</a>
+      Para ver las clases ingresa a <a href="https://dao.education/wp-login.php">https://dao.education</a>
+      <br/>
+      Nos tomamos la libertad de crearte una contraseña, pero puedes cambiarla cuando quieras.
       <br/>
       Nombre de usuario: <strong>{{ email }} </strong>
       <br/>
       Contraseña: <strong>{{ password }} </strong>
       <br/>
-      Nos tomamos la libertad de crearte una contraseña, pero puedes cambiarla cuando quieras.
     </p>
 
-    <h3>Acerca de la comunidad online en Discord</h3>
+    <h3>La comunidad en Discord</h3>
 
     <p>
       Nuestra comunidad educativa está en la plataforma <strong>Discord</strong>
@@ -35,15 +38,22 @@
       Ahí podrás hablar con otros estudiantes, profesores, participar de los eventos virtuales, y mantenerte
       al tanto de las últimas noticias.
       <br/>
-      Visita este link para acceder a la comunidad. Si todavía no tienes cuenta en Discord podrás crear una ahí mismo.
+      Además, nuestra comunidad es el mejor lugar para buscar ayuda creando tu propia DAO, o participando
+      de alguna DAO existente, y obtener beneficios por hacerlo.
       <br/>
-      {{ discord_verification_link }}
+      Visita
+      <a href="{{ discord_verification_link }}">este link para acceder a la comunidad</a>.
+      (Si todavía no tienes cuenta en Discord podrás crear una al instante).
+      <br/>
+      ¡Ingresa a nuestro Discord y asegúrate de presentarte!
     </p>
 
     <p>
       Si tienes dudas puedes escribirnos a <a href="mailto:info@dao.education">info@dao.education</a>
       <br/>
-      Un gran saludo!
+      ¡Un gran saludo!
+      <br/>
+      El equipo de dao.education
     </p>
 
   </body>

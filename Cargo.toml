@@ -7,7 +7,8 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rocket = { git = "https://github.com/SergioBenitez/Rocket", branch = "v0.5-rc", features = ["json"] }
+rocket_cors = { git = "https://github.com/lawliet89/rocket_cors.git", branch = "master" }
+rocket = { version = "0.5.0-rc.1", features = ["json"] }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
@@ -25,7 +26,7 @@ hmac = "0.11.0"
 sha2 = "0.9.8"
 hex = "0.4.3"
 base64 = "*"
-sqlx-models-derive = { path = "../../sqlx-models-derive" }
+sqlx-models-derive = { git = "https://github.com/constata-eu/sqlx-models-derive" }
 
 [dependencies.stripe-rust]
 path = "/home/nubis/stripe-rs"

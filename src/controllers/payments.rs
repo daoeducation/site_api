@@ -19,3 +19,7 @@ pub async fn from_invoice<'a>(site: &'a State<Site>, invoice_id: i32, _session: 
   Ok(Json("OK"))
 }
 
+#[get("/get_pricing")]
+pub async fn get_pricing(country: Country, site: &State<Site>) -> Json<(Plan, Plan)> {
+  Json((site.settings.pricing.global.clone(), country.plan()))
+}

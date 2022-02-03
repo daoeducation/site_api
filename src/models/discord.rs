@@ -1,6 +1,6 @@
 use super::Deserialize;
 
-#[derive(FromForm)]
+#[derive(Debug, FromForm)]
 pub struct DiscordToken {
   pub state: String,
   pub access_token: String,
@@ -10,8 +10,7 @@ pub struct DiscordToken {
 pub struct DiscordProfile {
   pub id: String,
   pub username: String,
-  pub discriminator: i32,
-  pub avatar: String,
-  pub verified: String,
+  pub discriminator: String,
+  pub verified: bool,
   pub email: String,
 }

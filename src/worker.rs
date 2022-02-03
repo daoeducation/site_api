@@ -1,6 +1,6 @@
 use daoe_api::{
   error::Result,
-  models::{Site, SiteSettings, BillingSummary, StudentQuery}
+  models::{Site, SiteSettings, BillingSummary}
 };
 use chrono::Utc;
 
@@ -19,7 +19,7 @@ async fn main() {
 }
 
 async fn process_students_billing(site: &Site) -> Result<()> {
-  let students = site.student().all(&StudentQuery::default()).await?;
+  let students = site.student().select().all().await?;
   for student in students.into_iter() {
     let billing_summary = BillingSummary::new(student).await?;
     billing_summary.create_monthly_charges_for(&Utc::today()).await?;

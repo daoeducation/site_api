@@ -15,10 +15,10 @@ pub mod site;
 pub use site::*;
 
 pub mod student;
-pub use student::{NewStudent, NewStudentAttrs, Student, StudentQuery};
+pub use student::*;
 
 pub mod subscription;
-pub use subscription::{NewSubscription, NewSubscriptionAttrs, Subscription, SubscriptionQuery};
+pub use subscription::*;
 
 pub mod monthly_charge;
 pub use monthly_charge::*;
@@ -54,11 +54,11 @@ pub struct PublicStudentForm {
 }
 
 impl PublicStudentForm {
-  pub fn into_new_student(self, country: Country, site: &Site) -> NewStudent {
-    let attrs = NewStudentAttrs{
+  pub fn into_insert_student(self, country: &Country) -> InsertStudent {
+    InsertStudent{
       email: self.email,
       full_name: self.full_name,
-      country: country.0,
+      country: country.0.clone(),
       created_at: Utc::now(),
       phone: self.phone,
       tax_number: self.tax_number,
@@ -72,14 +72,14 @@ impl PublicStudentForm {
       discord_verification: None,
       stripe_customer_id: None,
       payment_method: self.payment_method,
-    };
-    NewStudent::new(site.clone(), attrs)
+    }
   }
 }
 
 #[derive(Serialize)]
 pub struct StudentState {
   pub discord_verification_link: Option<String>,
+  pub discord_handle: Option<String>,
   pub billing: BillingSummary,
 }
 
@@ -87,6 +87,7 @@ impl StudentState {
   pub async fn new(student: Student) -> Result<StudentState> {
     Ok(Self{
       discord_verification_link: student.discord_verification_link(),
+      discord_handle: student.attrs.discord_handle.clone(),
       billing: BillingSummary::new(student).await?,
     })
   }
@@ -145,7 +146,7 @@ impl BillingCharge for MonthlyCharge {
       "UPDATE monthly_charges SET paid = true, paid_at = $2 WHERE id = $1",
       self.attrs.id,
       self.attrs.paid_at,
-    ).execute(&self.site.db).await?;
+    ).execute(&self.state.db).await?;
     Ok(())
   }
 }
@@ -179,7 +180,7 @@ impl BillingCharge for Degree {
       "UPDATE degrees SET paid = true, paid_at = $2 WHERE id = $1",
       self.attrs.id,
       self.attrs.paid_at,
-    ).execute(&self.site.db).await?;
+    ).execute(&self.state.db).await?;
     Ok(())
   }
 }
@@ -213,7 +214,7 @@ impl BillingCharge for Subscription {
       "UPDATE subscriptions SET paid = true, paid_at = $2 WHERE id = $1",
       self.attrs.id,
       self.attrs.paid_at,
-    ).execute(&self.site.db).await?;
+    ).execute(&self.state.db).await?;
     self.on_paid().await?;
     Ok(())
   }
@@ -269,7 +270,7 @@ pub struct BillingSummary {
   #[serde(skip_serializing)]
   pub student: student::Student,
   #[serde(skip_serializing)]
-  pub site: Site,
+  pub state: Site,
 
   pub subscription: Subscription,
   pub next_invoicing_date: UtcDateTime,
@@ -285,7 +286,7 @@ impl BillingSummary {
     let mut unpaid_charges: Vec<Box<dyn BillingCharge>> = vec![];
     let mut history: Vec<Box<dyn BillingHistoryItem>> = vec![];
 
-    let site = &student.site;
+    let site = &student.state;
 
     let subscription = student.subscription().await?;
 
@@ -295,8 +296,7 @@ impl BillingSummary {
       unpaid_charges.push(Box::new(subscription.clone()));
     }
 
-    let degrees = site.degree()
-      .all(&DegreeQuery{ student_id_eq: Some(student.attrs.id), ..Default::default()}).await?;
+    let degrees = site.degree().select().student_id_eq(student.id()).all().await?;
 
     for degree in degrees.into_iter() {
       if !degree.attrs.paid {
@@ -305,9 +305,9 @@ impl BillingSummary {
       history.push(Box::new(degree));
     }
 
-    let monthly_charges = site.monthlycharge()
-      .all(&MonthlyChargeQuery{ student_id_eq: Some(student.attrs.id), ..Default::default()})
-      .await?;
+    let monthly_charges = site.monthly_charge().select()
+      .student_id_eq(student.id())
+      .all().await?;
 
     for charge in monthly_charges.into_iter() {
       if !charge.attrs.paid {
@@ -316,17 +316,18 @@ impl BillingSummary {
       history.push(Box::new(charge));
     }
 
-    let payments = site.payment()
-      .all(&PaymentQuery{student_id_eq: Some(student.attrs.id), ..Default::default()}).await?;
+    let payments = site.payment().select().student_id_eq(student.id()).all().await?;
 
     for payment in payments.into_iter() {
       history.push(Box::new(payment))
     }
 
     let balance: Decimal = history.iter().map(|i| i.amount() ).sum();
-    let invoices = site.invoice().all(
-      &InvoiceQuery{student_id_eq: Some(student.attrs.id), paid_eq: Some(false), expired_eq: Some(false), ..Default::default()}
-    ).await?;
+    let invoices = site.invoice().select()
+      .student_id_eq(student.id())
+      .paid_eq(&false)
+      .expired_eq(&false)
+      .all().await?;
     let invoiced: Decimal = invoices.iter().map(|i| i.attrs.amount ).sum();
     let invoiceable = (balance * Decimal::NEGATIVE_ONE) - invoiced;
 
@@ -339,7 +340,7 @@ impl BillingSummary {
     let next_invoicing_date = subscription.next_invoicing_date();
 
     Ok(BillingSummary {
-      site: student.site.clone(),
+      state: student.state.clone(),
       subscription,
       student,
       history,
@@ -367,7 +368,7 @@ impl BillingSummary {
     };
 
     match maybe_url_and_external_id {
-      Some((url, external_id)) => Ok(Some(self.site.invoice().build(NewInvoiceAttrs{
+      Some((url, external_id)) => Ok(Some(self.state.invoice().insert().use_struct(InsertInvoice{
         student_id: self.student.attrs.id,
         created_at: Utc::now(),
         payment_method: self.student.attrs.payment_method,
@@ -410,8 +411,8 @@ impl BillingSummary {
     use serde_json::json;
     pub use stripe::{CheckoutSession, Subscription, ListSubscriptions, SubscriptionStatusFilter};
 
-    let client = &self.site.stripe;
-    let prices = self.site.settings.stripe_prices.by_plan_code(self.subscription.attrs.plan_code);
+    let client = &self.state.stripe;
+    let prices = self.state.settings.stripe_prices.by_plan_code(self.subscription.attrs.plan_code);
     let customer_id: CustomerId = self.student.get_or_create_stripe_customer_id(&client).await?;
 
     let _subscribed = Subscription::list(client, ListSubscriptions{
@@ -424,8 +425,8 @@ impl BillingSummary {
       .map(|i| i.stripe_price(&prices) ).collect();
 
     let stripe_session : CheckoutSession = client.post_form("/checkout/sessions", json![{
-      "success_url": format!("{}/payments/success", self.site.settings.checkout_domain),
-      "cancel_url": format!("{}/payments/canceled", self.site.settings.checkout_domain),
+      "success_url": self.state.settings.payment_success_redirect.clone(),
+      "cancel_url": self.state.settings.payment_error_redirect.clone(),
       "customer": customer_id,
       "payment_method_types": ["card"],
       "mode": "subscription",
@@ -442,11 +443,15 @@ impl BillingSummary {
 
     let invoice: btcpay::Invoice = ureq::post(&format!(
         "{}/api/v1/stores/{}/invoices",
-        self.site.settings.btcpay.base_url,
-        self.site.settings.btcpay.store_id,
+        self.state.settings.btcpay.base_url,
+        self.state.settings.btcpay.store_id,
       ))
-      .set("Authorization", &format!("token {}", self.site.settings.btcpay.api_key))
-      .send_json(serde_json::to_value(btcpay::InvoiceForm{ amount: total, currency: Currency::Eur })?)?
+      .set("Authorization", &format!("token {}", self.state.settings.btcpay.api_key))
+      .send_json(serde_json::to_value(btcpay::InvoiceForm{
+        amount: total,
+        currency: Currency::Eur,
+        checkout: btcpay::InvoiceFormCheckout{ redirectURL: self.state.settings.payment_success_redirect.clone() }
+      })?)?
       .into_json()?;
 
     Ok(Some((invoice.checkout_link, invoice.id)))
@@ -465,7 +470,7 @@ impl BillingSummary {
         r#"SELECT EXISTS(SELECT id FROM monthly_charges WHERE student_id = $1 AND billing_period = $2) as "exists!""#,
         self.student.attrs.id,
         today.and_hms(0,0,0),
-      ).fetch_one(&self.site.db).await?;
+      ).fetch_one(&self.state.db).await?;
 
       if exists {
         return Ok(());
@@ -679,9 +684,15 @@ pub mod btcpay {
   }
 
   #[derive(Debug, Serialize)]
+  pub struct InvoiceFormCheckout {
+    pub redirectURL: String,
+  }
+
+  #[derive(Debug, Serialize)]
   #[serde(rename_all = "camelCase")]
   pub struct InvoiceForm {
     pub amount: Decimal,
     pub currency: Currency,
+    pub checkout: InvoiceFormCheckout
   }
 }

@@ -4,8 +4,8 @@ use super::*;
 make_sqlx_model!{
   state: Site,
   table: students,
-  Student {
-    #[sqlx_search_as int4]
+  struct Student {
+    #[sqlx_search_as(int4)]
     id: i32,
     email: String,
     full_name: String,
@@ -16,38 +16,38 @@ make_sqlx_model!{
     tax_address: Option<String>,
     referral_code: Option<String>,
     current_subscription_id: Option<i32>,
+    #[sqlx_search_as(varchar)]
     wordpress_user: Option<String>,
     wordpress_initial_password: Option<String>,
     discord_user_id: Option<String>,
     discord_handle: Option<String>,
-    #[sqlx_search_as varchar]
+    #[sqlx_search_as(varchar)]
     discord_verification: Option<String>,
-    #[sqlx_search_as varchar]
+    #[sqlx_search_as(varchar)]
     stripe_customer_id: Option<String>,
     payment_method: PaymentMethod,
   }
 }
 
-impl NewStudent {
-  pub async fn save_and_subscribe(self) -> Result<Student> {
+impl InsertStudentHub {
+  pub async fn save_and_subscribe(self, plan: Plan) -> Result<Student> {
     use chrono::Datelike;
 
-    let tx = self.site.db.begin().await?;
+    let tx = self.state.db.begin().await?;
     let student = self.save().await?;
     
-    let plan = Country(student.attrs.country.clone()).plan();
-
-    let subscription = student.site.subscription().build(NewSubscriptionAttrs{
-      created_at: Utc::now(),
-      invoicing_day: Utc::now().day() as i32,
-      student_id: student.attrs.id,
-      active: true,
-      price: plan.signup,
-      paid: false,
-      plan_code: plan.code.clone(),
-      paid_at: None,
-      stripe_subscription_id: None,
-    }).save().await?;
+    let subscription = student.state.subscription()
+      .insert().use_struct(InsertSubscription{
+        created_at: Utc::now(),
+        invoicing_day: Utc::now().day() as i32,
+        student_id: student.attrs.id,
+        active: true,
+        price: plan.signup,
+        paid: false,
+        plan_code: plan.code.clone(),
+        paid_at: None,
+        stripe_subscription_id: None,
+      }).save().await?;
 
     subscription.create_monthly_charge(&Utc::today()).await?;
     tx.commit().await?;
@@ -58,19 +58,15 @@ impl NewStudent {
 
 impl Student {
   pub async fn subscription(&self) -> sqlx::Result<Subscription> {
-    self.site.subscription().find(&SubscriptionQuery{
-      student_id_eq: Some(self.attrs.id),
-      active_eq: Some(true),
-      .. Default::default()
-    }).await
+    self.state.subscription().select().student_id_eq(self.id()).active_eq(&true).one().await
   }
 
   pub fn discord_verification_link(&self) -> Option<String> {
     self.attrs.discord_verification.as_ref().map(|token|{
-      format!("https://discord.com/api/oauth2/authorize?response_type=token&client_id={}&state={}&scope=identify%20email%20guilds.join&redirect_uri={}/students/discord_success",
-      self.site.settings.discord.client_id,
+      format!("https://discord.com/api/oauth2/authorize?response_type=token&client_id={}&state={}&scope=identify%20email%20guilds.join&redirect_uri={}/discord-success",
+      self.state.settings.discord.client_id,
       &token,
-      self.site.settings.checkout_domain,
+      self.state.settings.checkout_domain,
     )})
   }
 
@@ -80,7 +76,7 @@ impl Student {
       "UPDATE students SET discord_verification = $2 WHERE id = $1",
       self.attrs.id,
       pass,
-    ).execute(&self.site.db).await?;
+    ).execute(&self.state.db).await?;
     self.attrs.discord_verification = Some(pass);
     Ok(())
   }
@@ -105,7 +101,7 @@ impl Student {
     sqlx::query!("UPDATE students SET stripe_customer_id = $1 WHERE id = $2",
       Some(customer_id.to_string()),
       self.attrs.id
-    ).execute(&self.site.db).await?;
+    ).execute(&self.state.db).await?;
     Ok(customer_id)
   }
 
@@ -114,7 +110,7 @@ impl Student {
       return Ok(())
     }
 
-    let wp = &self.site.settings.wordpress;
+    let wp = &self.state.settings.wordpress;
     let auth = format!("Basic {}", base64::encode(format!("{}:{}", wp.user, wp.pass)));
 
     let password = gen_passphrase();
@@ -138,7 +134,7 @@ impl Student {
       self.attrs.id,
       &user.id.to_string(),
       &password,
-    ).execute(&self.site.db).await?;
+    ).execute(&self.state.db).await?;
 
     ureq::post(&format!("{}/ldlms/v2/users/{}/groups", wp.api_url, user.id))
       .set("Authorization", &auth)
@@ -151,9 +147,9 @@ impl Student {
   }
 
   pub async fn send_payment_reminder(&self) -> Result<()> {
-    let maybe_invoice = self.site.invoice()
-      .find_optional(&InvoiceQuery{ student_id_eq: Some(self.attrs.id), ..Default::default()})
-      .await?;
+    let maybe_invoice = self.state.invoice().select()
+      .student_id_eq(self.id())
+      .optional().await?;
 
     match maybe_invoice {
       None => Ok(()),
@@ -179,7 +175,7 @@ impl Student {
     let html = TEMPLATES.render(template, &context)?;
 
     ureq::post("https://api.sendinblue.com/v3/smtp/email")
-      .set("api-key", &self.site.settings.sendinblue.api_key)
+      .set("api-key", &self.state.settings.sendinblue.api_key)
       .send_json(serde_json::json!({
         "sender": {
           "name": "DAO Education",
@@ -200,11 +196,8 @@ impl Student {
 
 impl StudentHub {
   pub async fn process_discord_response(&self, discord: DiscordToken) -> Result<String> {
-    let conf = &self.site.settings.discord;
-    let student = self.find(&StudentQuery{
-      discord_verification_eq: Some(Some(discord.state)),
-      ..Default::default()}
-    ).await?;
+    let conf = &self.state.settings.discord;
+    let student = self.select().discord_verification_eq(&Some(discord.state.clone())).one().await?;
     let profile: DiscordProfile = ureq::get("https://discord.com/api/v9/users/@me")
       .set("Authorization", &format!("Bearer {}", discord.access_token))
       .call()?
@@ -225,10 +218,10 @@ impl StudentHub {
 
     sqlx::query!(
       "UPDATE students SET discord_handle = $2, discord_user_id = $3 WHERE id = $1",
-      student.attrs.id,
+      student.id(),
       handle,
       profile.id
-    ).execute(&self.site.db).await?;
+    ).execute(&self.state.db).await?;
 
     Ok(handle)
   }

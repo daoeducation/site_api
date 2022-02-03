@@ -6,6 +6,8 @@ stripe_public_key="pk_test_something"
 stripe_events_secret="whsec_something"
 checkout_domain="http://127.0.0.1:31337"
 admin_key="superadmin"
+payment_success_redirect="https://dao.education/muchas-gracias"
+payment_error_redirect="https://dao.education/error-al-pagar"
 
 [global.discord]
 guild_id="111111111111"

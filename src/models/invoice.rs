@@ -4,25 +4,25 @@ use super::*;
 make_sqlx_model!{
   state: Site,
   table: invoices,
-  Invoice {
-    #[sqlx_search_as int4]
+  struct Invoice {
+    #[sqlx_search_as(int4)]
     id: i32,
-    #[sqlx_search_as int4]
+    #[sqlx_search_as(int4)]
     student_id: i32,
     created_at: UtcDateTime,
-    #[sqlx_search_as payment_method]
+    #[sqlx_search_as(payment_method)]
     payment_method: PaymentMethod,
-    #[sqlx_search_as varchar]
+    #[sqlx_search_as(varchar)]
     external_id: String,
-    #[sqlx_search_as decimal]
+    #[sqlx_search_as(decimal)]
     amount: Decimal,
     description: String,
     url: String,
-    #[sqlx_search_as boolean]
+    #[sqlx_search_as(boolean)]
     paid: bool,
-    #[sqlx_search_as boolean]
+    #[sqlx_search_as(boolean)]
     expired: bool,
-    #[sqlx_search_as int4]
+    #[sqlx_search_as(int4)]
     payment_id: Option<i32>,
     notified_on: Option<UtcDateTime>,
   }
@@ -30,7 +30,7 @@ make_sqlx_model!{
 
 impl Invoice {
   pub async fn make_payment(&self, clearing_data: Option<&str>) -> Result<Payment> {
-    self.site.payment().build(NewPaymentAttrs{
+    self.state.payment().insert().use_struct(InsertPayment{
       student_id: self.attrs.student_id,
       created_at: Utc::now(),
       amount: self.attrs.amount,
@@ -41,4 +41,3 @@ impl Invoice {
     }).create_and_pay_invoice().await
   }
 }
-

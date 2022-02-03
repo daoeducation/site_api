@@ -1,4 +1,5 @@
-use rocket::{routes, fairing::AdHoc};
+use rocket::{routes, fairing::AdHoc, http::Method};
+use rocket_cors::{AllowedHeaders, AllowedOrigins};
 
 use daoe_api::{
   models::SiteSettings,
@@ -9,17 +10,36 @@ use daoe_api::{
 pub mod test_support;
 
 pub fn server() -> rocket::Rocket<rocket::Build> {
+
+  let allowed_origins = AllowedOrigins::some_exact(&["https://dao.education"]);
+
+  let cors = rocket_cors::CorsOptions {
+    allowed_origins,
+    allowed_methods: vec![Method::Get, Method::Post, Method::Options].into_iter().map(From::from).collect(),
+    allowed_headers: AllowedHeaders::some(&["Authorization", "Accept", "Content-Type"]),
+    allow_credentials: true,
+    ..Default::default()
+  }
+  .to_cors().unwrap();
+
   rocket::build()
     .mount("/payments/", routes![
+      payments::get_pricing,
       payments::handle_stripe_events,
       payments::handle_btcpay_webhooks,
       payments::from_invoice,
     ])
-    .mount("/students", routes![
-      students::create,
-      students::show,
+    .mount("/students/", routes![
       students::discord_success,
+      students::by_wordpress_id,
+      students::create,
+      students::create_guest,
+      students::show,
+      students::index,
     ])
+    .mount("/", rocket_cors::catch_all_options_routes())
+    .attach(cors.clone())
+    .manage(cors)
     .attach(AdHoc::on_ignite("Site config", |rocket| async {
       let site = SiteSettings::default()
         .into_site()
@@ -80,7 +100,7 @@ mod test {
     assert!(state.get("unpaid_charges").unwrap().as_array().unwrap().is_empty());
     assert_eq!(state.get("balance").unwrap().as_str().unwrap(), "0");
 
-    let student = site.student().find_by_id(1).await.unwrap();
+    let student = site.student().find(&1).await.unwrap();
     let billing_summary = BillingSummary::new(student.clone()).await.unwrap();
     billing_summary.create_monthly_charges_for(&Utc::today()).await.unwrap();
 

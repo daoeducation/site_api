@@ -12,6 +12,8 @@ pub struct SiteSettings {
   pub secret_key: String,
   pub checkout_domain: String,
   pub admin_key: String,
+  pub payment_success_redirect: String,
+  pub payment_error_redirect: String,
   pub stripe_secret_key: String,
   pub stripe_public_key: String,
   pub stripe_prices: StripePrices,
@@ -72,6 +74,8 @@ mod test {
         checkout_domain="http://example.com"
         database_uri="postgres://daoe:password@localhost/daoe_development"
         admin_key="supersecret"
+        payment_success_redirect="https://dao.education/muchas-gracias"
+        payment_error_redirect="https://dao.education/error-al-pagar"
 
         [global.pricing]
         global = { code = "global", signup = 200, monthly = 60, degree = 500 }
@@ -129,6 +133,8 @@ mod test {
         stripe_events_secret: "supersecret".into(),
         checkout_domain: "http://example.com".into(),
         database_uri: "postgres://daoe:password@localhost/daoe_development".into(),
+        payment_success_redirect: "https://dao.education/muchas-gracias".into(),
+        payment_error_redirect: "https://dao.education/error-al-pagar".into(),
         admin_key: "supersecret".into(),
         pricing: Plans{
           global: Plan{

@@ -26,7 +26,7 @@ impl<'r> FromRequest<'r> for Country {
   type Error = std::convert::Infallible;
 
   async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-    Outcome::Success(Country(req.headers().get_one("HTTP_CF_IPCOUNTRY").unwrap_or("XX").to_string()))
+    Outcome::Success(Country(req.headers().get_one("cf-ipcountry").unwrap_or("XX").to_string()))
   }
 }
 
