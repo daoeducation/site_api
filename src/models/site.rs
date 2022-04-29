@@ -78,10 +78,10 @@ mod test {
         payment_error_redirect="https://dao.education/error-al-pagar"
 
         [global.pricing]
-        global = { code = "global", signup = 200, monthly = 60, degree = 500 }
-        europe = { code = "europe", signup = 150, monthly = 45, degree = 375 }
-        latam = { code = "latam",  signup = 100, monthly = 30, degree = 250 }
-        guest = { code = "guest",  signup =   0, monthly =  0, degree =   0 }
+        global = { code = "global", signup = 200, degree = 500 }
+        europe = { code = "europe", signup = 150, degree = 375 }
+        latam = { code = "latam",  signup = 100, degree = 250 }
+        guest = { code = "guest",  signup =   0, degree =   0 }
 
         [global.discord]
         guild_id="1000"
@@ -106,13 +106,10 @@ mod test {
 
         [global.stripe_prices]
         global_fzth_signup= "1"
-        global_fzth_monthly= "2"
         global_fzth_degree= "3"
         latam_fzth_signup= "4"
-        latam_fzth_monthly= "5"
         latam_fzth_degree= "6"
         europe_fzth_signup= "7"
-        europe_fzth_monthly= "8"
         europe_fzth_degree= "9"
     "#,
     );
@@ -140,25 +137,21 @@ mod test {
           global: Plan{
             code: PlanCode::Global,
             signup: Decimal::new(200,0),
-            monthly: Decimal::new(60,0),
             degree: Decimal::new(500,0),
           },
           europe: Plan{
             code: PlanCode::Europe,
             signup: Decimal::new(150,0),
-            monthly: Decimal::new(45,0),
             degree: Decimal::new(375,0),
           },
           latam: Plan{
             code: PlanCode::Latam,
             signup: Decimal::new(100,0),
-            monthly: Decimal::new(30,0),
             degree: Decimal::new(250,0),
           },
           guest: Plan{
             code: PlanCode::Guest,
             signup: Decimal::ZERO,
-            monthly: Decimal::ZERO,
             degree: Decimal::ZERO,
           },
         },
@@ -185,13 +178,10 @@ mod test {
         },
         stripe_prices: StripePrices {
           global_fzth_signup: mkprice("1"),
-          global_fzth_monthly: mkprice("2"),
           global_fzth_degree: mkprice("3"),
           latam_fzth_signup: mkprice("4"),
-          latam_fzth_monthly: mkprice("5"),
           latam_fzth_degree: mkprice("6"),
           europe_fzth_signup: mkprice("7"),
-          europe_fzth_monthly: mkprice("8"),
           europe_fzth_degree: mkprice("9"),
         }
       }

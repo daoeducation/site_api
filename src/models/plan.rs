@@ -4,7 +4,6 @@ use super::*;
 pub struct Plan {
   pub code: PlanCode,
   pub signup: Decimal,
-  pub monthly: Decimal,
   pub degree: Decimal,
 }
 

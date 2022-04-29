@@ -75,8 +75,8 @@ mod test {
     let mut state = res.get("billing").unwrap().clone();
 
     assert_eq!(state.get("invoices").unwrap().as_array().unwrap().len(), 1);
-    assert_eq!(state.get("unpaid_charges").unwrap().as_array().unwrap().len(), 2);
-    assert_eq!(state.get("balance").unwrap().as_str().unwrap(), "-130");
+    assert_eq!(state.get("unpaid_charges").unwrap().as_array().unwrap().len(), 1);
+    assert_eq!(state.get("balance").unwrap().as_str().unwrap(), "-100");
 
     assert_that!(&state
       .get("invoices").unwrap()
@@ -101,21 +101,11 @@ mod test {
     assert_eq!(state.get("balance").unwrap().as_str().unwrap(), "0");
 
     let student = site.student().find(&1).await.unwrap();
-    let billing_summary = BillingSummary::new(student.clone()).await.unwrap();
-    billing_summary.create_monthly_charges_for(&Utc::today()).await.unwrap();
+    BillingSummary::new(student.clone()).await.unwrap();
 
     state = fetch_user_billing().await;
     assert!(state.get("invoices").unwrap().as_array().unwrap().is_empty());
     assert!(state.get("unpaid_charges").unwrap().as_array().unwrap().is_empty());
     assert_eq!(state.get("balance").unwrap().as_str().unwrap(), "0");
-
-    for _ in 0..3i32 {
-      billing_summary.create_monthly_charges_for(&(Utc::today() + RelativeDuration::months(1))).await.unwrap();
-    }
-
-    state = fetch_user_billing().await;
-    assert_eq!(state.get("invoices").unwrap().as_array().unwrap().len(), 1);
-    assert_eq!(state.get("unpaid_charges").unwrap().as_array().unwrap().len(), 1);
-    assert_eq!(state.get("balance").unwrap().as_str().unwrap(), "-30");
   }
 }

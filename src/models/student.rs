@@ -31,15 +31,12 @@ make_sqlx_model!{
 
 impl InsertStudentHub {
   pub async fn save_and_subscribe(self, plan: Plan) -> Result<Student> {
-    use chrono::Datelike;
-
     let tx = self.state.db.begin().await?;
     let student = self.save().await?;
     
-    let subscription = student.state.subscription()
+    student.state.subscription()
       .insert().use_struct(InsertSubscription{
         created_at: Utc::now(),
-        invoicing_day: Utc::now().day() as i32,
         student_id: student.attrs.id,
         active: true,
         price: plan.signup,
@@ -49,7 +46,6 @@ impl InsertStudentHub {
         stripe_subscription_id: None,
       }).save().await?;
 
-    subscription.create_monthly_charge(&Utc::today()).await?;
     tx.commit().await?;
 
     Ok(student)

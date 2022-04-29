@@ -2,7 +2,6 @@ use sqlx_models_derive::make_sqlx_model;
 use crate::TEMPLATES;
 use crate::error::{Result, Error};
 pub use chrono::{DateTime, Date, Utc};
-use chronoutil::relative_duration::RelativeDuration;
 pub use serde::{Deserialize, Serialize, ser::{Serializer, SerializeStruct}};
 pub use sqlx::types::Decimal;
 use validator::Validate;
@@ -19,9 +18,6 @@ pub use student::*;
 
 pub mod subscription;
 pub use subscription::*;
-
-pub mod monthly_charge;
-pub use monthly_charge::*;
 
 pub mod degree;
 pub use degree::*;
@@ -115,40 +111,6 @@ impl Serialize for dyn BillingCharge {
         state.serialize_field("paid_at", &self.paid_at())?;
         state.end()
     }
-}
-
-#[rocket::async_trait]
-impl BillingCharge for MonthlyCharge {
-  fn description(&self) -> String {
-    "Cargo mensual".to_string()
-  }
-
-  fn created_at(&self) -> UtcDateTime {
-    self.attrs.created_at.clone()
-  }
-
-  fn amount(&self) -> Decimal {
-    self.attrs.price.clone()
-  }
-
-  fn paid_at(&self) -> Option<UtcDateTime> {
-    self.attrs.paid_at.clone()
-  }
-
-  fn stripe_price<'a>(&self, prices: &'a StripePlanPrices) -> &'a PriceId {
-    prices.monthly
-  }
-
-  async fn set_paid(&mut self) -> Result<()> {
-    self.attrs.paid_at = Some(Utc::now());
-    self.attrs.paid = true;
-    sqlx::query!(
-      "UPDATE monthly_charges SET paid = true, paid_at = $2 WHERE id = $1",
-      self.attrs.id,
-      self.attrs.paid_at,
-    ).execute(&self.state.db).await?;
-    Ok(())
-  }
 }
 
 #[rocket::async_trait]
@@ -273,7 +235,6 @@ pub struct BillingSummary {
   pub state: Site,
 
   pub subscription: Subscription,
-  pub next_invoicing_date: UtcDateTime,
   pub history: Vec<Box<dyn BillingHistoryItem>>,
   pub unpaid_charges: Vec<Box<dyn BillingCharge>>,
   pub invoices: Vec<Invoice>,
@@ -305,17 +266,6 @@ impl BillingSummary {
       history.push(Box::new(degree));
     }
 
-    let monthly_charges = site.monthly_charge().select()
-      .student_id_eq(student.id())
-      .all().await?;
-
-    for charge in monthly_charges.into_iter() {
-      if !charge.attrs.paid {
-        unpaid_charges.push(Box::new(charge.clone()));
-      }
-      history.push(Box::new(charge));
-    }
-
     let payments = site.payment().select().student_id_eq(student.id()).all().await?;
 
     for payment in payments.into_iter() {
@@ -337,8 +287,6 @@ impl BillingSummary {
       None
     };
 
-    let next_invoicing_date = subscription.next_invoicing_date();
-
     Ok(BillingSummary {
       state: student.state.clone(),
       subscription,
@@ -348,7 +296,6 @@ impl BillingSummary {
       invoices,
       total_charges_not_invoiced_yet,
       balance,
-      next_invoicing_date,
     })
   }
 
@@ -456,31 +403,6 @@ impl BillingSummary {
 
     Ok(Some((invoice.checkout_link, invoice.id)))
   }
-
-  pub async fn create_monthly_charges_for(&self, today: &UtcDate) -> Result<()> {
-    use chrono::prelude::*;
-    let month_start = Utc.ymd(today.year(), today.month(), 1);
-    let month_end = month_start + RelativeDuration::months(1);
-    let month_days = month_end.signed_duration_since(month_start).num_days() as i32;
-    let this_day = today.day() as i32;
-    let invoicing_day = self.subscription.attrs.invoicing_day;
-
-    if invoicing_day == this_day || (invoicing_day > month_days && this_day == month_days) {
-      let exists: bool = sqlx::query_scalar!(
-        r#"SELECT EXISTS(SELECT id FROM monthly_charges WHERE student_id = $1 AND billing_period = $2) as "exists!""#,
-        self.student.attrs.id,
-        today.and_hms(0,0,0),
-      ).fetch_one(&self.state.db).await?;
-
-      if exists {
-        return Ok(());
-      }
-
-      self.subscription.create_monthly_charge(today).await?;
-      self.invoice_all_not_invoiced_yet().await?;
-    }
-    Ok(())
-  }
 }
 
 #[derive(sqlx::Type, Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
@@ -556,20 +478,16 @@ pub struct BtcpaySettings {
 #[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
 pub struct StripePrices {
   pub global_fzth_signup: PriceId,
-  pub global_fzth_monthly: PriceId,
   pub global_fzth_degree: PriceId,
   pub latam_fzth_signup: PriceId,
-  pub latam_fzth_monthly: PriceId,
   pub latam_fzth_degree: PriceId,
   pub europe_fzth_signup: PriceId,
-  pub europe_fzth_monthly: PriceId,
   pub europe_fzth_degree: PriceId,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct StripePlanPrices<'a> {
   pub signup: &'a PriceId,
-  pub monthly: &'a PriceId,
   pub degree: &'a PriceId,
 }
 
@@ -577,13 +495,10 @@ impl StripePrices {
   pub async fn validate_all(&self, client: &stripe::Client) -> Result<()> {
     let prices = vec![
       &self.global_fzth_signup,
-      &self.global_fzth_monthly,
       &self.global_fzth_degree,
       &self.latam_fzth_signup,
-      &self.latam_fzth_monthly,
       &self.latam_fzth_degree,
       &self.europe_fzth_signup,
-      &self.europe_fzth_monthly,
       &self.europe_fzth_degree,
     ];
     for price in prices {
@@ -597,17 +512,14 @@ impl StripePrices {
     match code {
       PlanCode::Europe => StripePlanPrices{
         signup: &self.europe_fzth_signup,
-        monthly: &self.europe_fzth_monthly,
         degree: &self.europe_fzth_degree,
       },
       PlanCode::Latam => StripePlanPrices{
         signup: &self.latam_fzth_signup,
-        monthly: &self.latam_fzth_monthly,
         degree: &self.latam_fzth_degree,
       },
       _ => StripePlanPrices {
         signup: &self.global_fzth_signup,
-        monthly: &self.global_fzth_monthly,
         degree: &self.global_fzth_degree,
       }
     }

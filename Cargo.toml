@@ -27,6 +27,7 @@ sha2 = "0.9.8"
 hex = "0.4.3"
 base64 = "*"
 sqlx-models-derive = { git = "https://github.com/constata-eu/sqlx-models-derive" }
+openssl-sys = "*"
 
 [dependencies.stripe-rust]
 path = "/home/nubis/stripe-rs"
@@ -34,6 +35,15 @@ default-features = false
 features = ["full", "rustls-tls", "webhook-events"]
 
 #git = "https://github.com/wyyerd/stripe-rs" 
+
+# Add openssl-sys as a direct dependency so it can be cross compiled to
+# x86_64-unknown-linux-musl using the "vendored" feature below
+openssl-sys = "*"
+
+[features]
+# Force openssl-sys to staticly link in the openssl library. Necessary when
+# cross compiling to x86_64-unknown-linux-musl.
+vendored = ["openssl-sys/vendored"]
 
 [dev-dependencies]
 galvanic-test = "0.2"
@@ -50,10 +60,6 @@ name = "daoe_api"
 [[bin]]
 path = "src/main.rs"
 name = "api_server"
-
-[[bin]]
-path = "src/worker.rs"
-name = "worker"
 
 [[bin]]
 path = "src/migrator.rs"

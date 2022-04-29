@@ -1,2 +1,0 @@
-curl --location --request GET 'https://api-sandbox.coingate.com/v2/billing/subscriptions/390?status=active' \
---header 'Authorization: Bearer qoZeEDi1y5gH9JaK5eVwfTcsLx7nPdYytm7dH2s5'

@@ -1,10 +1,10 @@
 #!/bin/bash
 
 echo Compiling for release &&
-cargo build --release --bin migrator --bin worker --bin api_server &&
+cargo build --target=x86_64-unknown-linux-musl --features vendored --release --bin migrator --bin worker --bin api_server &&
 rm -rf /tmp/deploy-files &&
 mkdir /tmp/deploy-files &&
-cp target/release/{migrator,api_server,worker} /tmp/deploy-files &&
+cp target/x86_64-unknown-linux-musl/release/{migrator,api_server,worker} /tmp/deploy-files &&
 echo "Copying deploy files" &&
 scp -r /tmp/deploy-files root@$1:/var/www/dao.education &&
 ssh root@$1 '
