@@ -1,10 +1,10 @@
 #!/bin/bash
 
 echo Compiling for release &&
-cargo build --target=x86_64-unknown-linux-musl --features vendored --release --bin migrator --bin worker --bin api_server &&
+cargo build --target=x86_64-unknown-linux-musl --features vendored --release --bin migrator --bin api_server &&
 rm -rf /tmp/deploy-files &&
 mkdir /tmp/deploy-files &&
-cp target/x86_64-unknown-linux-musl/release/{migrator,api_server,worker} /tmp/deploy-files &&
+cp target/x86_64-unknown-linux-musl/release/{migrator,api_server} /tmp/deploy-files &&
 echo "Copying deploy files" &&
 scp -r /tmp/deploy-files root@$1:/var/www/dao.education &&
 ssh root@$1 '
@@ -12,14 +12,14 @@ cd /var/www/dao.education &&
 echo "Changing ownership" &&
 chown -R www-data.www-data deploy-files &&
 echo "Stopping servers" &&
-systemctl stop daoe_api worker &&
+systemctl stop daoe_api &&
 echo "Backing up old files, moving in new ones" &&
-for f in "api_server" "migrator" "worker";
+for f in "api_server" "migrator";
   do mv $f $f.old;
   mv deploy-files/$f .;
 done &&
 echo "Running migrations" &&
 ./migrator &&
 echo "Start new servers" &&
-systemctl start worker daoe_api &&
-systemctl status daoe_api worker'
+systemctl start daoe_api &&
+systemctl status daoe_api'

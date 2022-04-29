@@ -376,7 +376,7 @@ impl BillingSummary {
       "cancel_url": self.state.settings.payment_error_redirect.clone(),
       "customer": customer_id,
       "payment_method_types": ["card"],
-      "mode": "subscription",
+      "mode": "payment",
       "line_items": line_items.into_iter().map(|i| json![{"quantity": 1, "price": i.clone()}]).collect::<Vec<serde_json::Value>>(),
     }])
     .await?;
